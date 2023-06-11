@@ -3,9 +3,9 @@
 
 # Project overview
 In this project, I studied the connection between gut bacteria and obesity which was subdivided 
-into 3 main phenotypes: BMI, waist circumference adjusted for BMI (WaistadjBMI), and waist-hip ratio 
+into 3 main phenotypes: BMI, waist circumference adjusted for BMI (WaistadjBMI), and waist-hip ratio
 adjusted for BMI (WHRadjBMI) in 3 large population cohorts (N = 12028): The Swedish CArdioPulmonary bioImage 
-Study (SCAPIS Malmö and SCAPIS Uppsala) and Malmö Offspring Study (MOS). 
+Study (SCAPIS Malmö and SCAPIS Uppsala) and Malmö Offspring Study (MOS).
 
 # Illustrated table of content
 ## 1. Project description
@@ -23,6 +23,7 @@ into metagenomic species (MGS), that enabled identification of both known and un
 sub-species. We used a series of generalized linear models that are adjusted for multiple confounders, LASSO 
 regression, and functional analysis for bacterial proteins and pathways that are associated with and 
 enriched in the phenotypes.
+
 
 ## 2. Installations
 I used R v4.2.2. <br>
