@@ -1,0 +1,654 @@
+---
+title: "Results_BMI_process_plot"
+output: html_document
+date: '2022-10-04'
+---
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '/Volumes/research/metabogut/BMI_2021')
+```
+
+
+Load data from Marlenas file 
+```{r}
+rm(list = ls())
+library(readxl)
+library(tidyverse)
+library(gridExtra)
+library(ggplot2)
+library(RColorBrewer)
+library(pheatmap)
+library(ComplexHeatmap)
+
+load("marlena/results_version_221109/all_results_221109.Rdata")
+load("Louise_intermediate/data_log_filt5_n12028_update220608_221104.RData")
+taxonomy <- read_xlsx("/Volumes/research/metabogut/Metagenomics_CM/Data LUNGUT/Updated_taxonomy_annotation_AronEklundCM211021/HG3.A.7_tax_updatedTaxonomy_NCBIversion210502_fromAronEklundCM211013.xlsx")
+
+```
+
+```{r}
+table(all_results$analysis)
+table(all_results$outcome)
+table(all_results$cohort)
+table(all_results$model_name)
+```
+Add in taxonomical name 
+```{r}
+taxonomy <- taxonomy %>% rename(MGS = ...1)
+maintaxa <- taxonomy %>% unite("maintaxa", MainTax:MGS, sep = " ", remove = FALSE)
+maintaxa <- maintaxa %>% dplyr::select(maintaxa, MGS)
+maintaxa <- maintaxa %>% rename(mgs = MGS)
+
+#remove the :maleTRUE inorder to merge with maintaxa and get annotations
+all_results$mgs_only <- sub(":maleTRUE", "", all_results$mgs)
+
+# 988 mgs 
+data_all <- merge(maintaxa, all_results, by.x = "mgs", by.y = "mgs_only")
+colnames(data_all)[1] <- 'mgs_only'
+colnames(data_all)[names(data_all) == 'mgs.y'] <- 'mgs'
+
+
+# Split MGS names into genus-species and other columns
+data_sep <- data_all %>% 
+    separate(maintaxa, into = c("genus", "species", "other"), 
+             sep = "\\s(?=sp\\.|subsp\\.)|\\s+(?=HG3A)", 
+             extra = "merge", remove = FALSE) %>% 
+    unite(others, species, other, na.rm = TRUE, sep = " ")
+
+data_sep$label=paste("*",data_sep$genus,"* ",data_sep$other,sep="")
+```
+
+Extract significant BMI results 
+```{r}
+BMI_sig <- data_sep %>% filter(outcome == "BMI", analysis == "main", 
+                               model_name == "full_M1_BMI",
+                               cohort == "all_cohorts",p_fdr_per_outcome <= 0.05)
+
+#take top 100 most significant associations
+BMI_sig_100 <- BMI_sig %>% filter(rank(p_fdr_per_outcome)<=100)
+#remove mgs_only column
+BMI_sig_100 <- BMI_sig_100[2:ncol(BMI_sig_100)]
+```
+
+Add sex specific results 
+
+full_M1_BMI
+full_stratM1_BMI_females
+full_stratM1_BMI_males
+```{r}
+BMI_sex <- data_sep %>% filter(analysis == "main") %>% filter(
+    model_name == "full_stratM1_BMI_females" | 
+        model_name =="full_stratM1_BMI_males", cohort == 'all_cohorts')
+
+sig_mgs_list_100 <- BMI_sig_100 %>% dplyr::select(mgs)
+
+# get the data for these top 100 mgs list from sex results
+
+BMI_sex_top <- merge(BMI_sex, sig_mgs_list_100, by = 'mgs')
+BMI_sex_top <- BMI_sex_top[,c(3:9,1, 10:ncol(BMI_sex_top))]
+```
+
+Add interaction results
+```{r}
+subset_data_sep <- data_sep[grepl(":maleTRUE", data_sep$mgs),]
+
+
+BMI_int <- subset_data_sep %>% filter(analysis == "main",
+                               cohort == 'all_cohorts', model_name == "full_intM1_BMI" ) 
+
+BMI_int_top <- merge(BMI_int, sig_mgs_list_100, by.x = 'mgs_only', by.y = 'mgs')
+
+#keep mgs_only column and remove the one with :maleTRUE because I will merge with mgs_only below
+BMI_int_top <- BMI_int_top[c(2:8,1,10:ncol(BMI_int_top))]
+names(BMI_int_top)[names(BMI_int_top) == "mgs_only"] <- "mgs"
+```
+
+### put data data together
+```{r}
+
+merge_all_with_sig <- rbind(BMI_sig_100, BMI_sex_top,BMI_int_top)
+
+# subset the needed data
+merge_all_with_sig_subset <- merge_all_with_sig %>% 
+  transmute(mgs = mgs, maintaxa = maintaxa, label = label,
+            analysis = analysis, outcome = outcome,
+            cohort = cohort, model_name = model_name, 
+            n_obs = n_obs, est = est,
+            se = se,ci_low = ci_low, ci_high = ci_high, p = p, 
+            p_fdr_per_outcome = p_fdr_per_outcome)
+
+
+merge_all_with_sig_subset <- merge_all_with_sig_subset %>% 
+  mutate(phenotype = ifelse(model_name == 'full_stratM1_BMI_females', 'Female', 
+                            ifelse(model_name == 'full_stratM1_BMI_males', 'Male', 
+                                   ifelse(model_name == 'full_M1_BMI', 'All',
+                                          'Interaction'))))
+```
+
+### re-structure the data to plot in the heatmap
+```{r chunk created by Mariam 10 feb 2023}
+transform_to_table <- merge_all_with_sig_subset %>% spread(phenotype, p_fdr_per_outcome)
+
+transform_to_table<- transform_to_table %>%
+  group_by(mgs) %>%
+  summarise( label = label,
+             All = na.omit(All),
+             Female = na.omit(Female),
+             Male = na.omit(Male),
+             Interaction = na.omit(Interaction))
+
+
+transform_to_table <- unique(transform_to_table) 
+
+#use this table for the heatmap
+transform_to_table <- transform_to_table %>% 
+  mutate(All = signif(All,2),
+         Female = signif(Female,2),
+         Male = signif(Male,2),
+         Interaction = signif(Interaction,2))
+
+```
+
+
+```{r}
+
+#remove interaction estimates
+data_plot <- merge_all_with_sig_subset[merge_all_with_sig_subset$phenotype != 'Interaction',]
+P <- data_plot %>%  group_by (phenotype) %>% ggplot(aes(x=reorder(factor(label),est), y=est, ymin=ci_low, ymax=ci_high)) +
+    geom_hline(yintercept = 0, color = "grey80")+
+  geom_pointrange(position = position_dodge(width = 1), size=0.1,aes(color=phenotype), shape = 20) + 
+  scale_color_manual(values = c("black", "hotpink", "green4"), labels = c("All", "Female", "Male")) + 
+  xlab("") + 
+  ylab('') + 
+  #ggtitle("maintaxa") + 
+ # coord_cartesian(ylim = c(-5, 30))+ 
+  coord_flip() + theme_minimal() + #scale_y_reverse() +
+  theme(axis.text.y = element_blank(),
+        axis.text.x = element_text(size = 6.5),
+        #axis.title.x = element_text(size = 9),
+        #plot.title = element_text(size = 9.2,hjust = -0.09),
+        legend.position = 'none',
+        plot.margin=grid::unit(c(2,0,-1,0), "mm")) 
+        #legend.position = c(0.9,1.5),
+        #legend.position = 'bottom',
+       # legend.direction = 'horizontal',
+        
+P
+
+
+```
+
+### before plotting the heatmap make sure that the order of maintaxa matches order of estimates
+```{r}
+#get y axis labels in the order they were plotted
+desc_in_P <- ggplot_build(P)$layout$panel_params[[1]]$y$get_labels()
+#flip bottom to top
+desc_in_P<- rev(desc_in_P)
+
+
+# Extract the levels of the text_column  in df1 in the same order as the unique values in df2
+levels_df1 <- levels(as.factor(transform_to_table$label))[match(desc_in_P, levels(as.factor(transform_to_table$label)))]
+
+# Find the indices of the key values in the text_column column of the data frame
+indices <- match(levels_df1, transform_to_table$label)
+
+# Reorder the values in the text_column column based on the indices
+transform_to_table <- transform_to_table[indices,]
+```
+
+#plot both plots together
+```{r}
+data <- transform_to_table[,c(3:6)]
+data[nrow(data) +1, ] <- 0 + 1e-50
+data[nrow(data) +1, ] <- 1 
+
+#colnames(data) <- NULL
+
+#create this foo variable just to add numbers that are not numeric to the table because some numeric numbers are being converted to e notation and others are not
+#foo <- as.data.frame(transform_to_table %>% 
+ # mutate(All = formatC(All, format = 'e', digits = 2),
+  #       Female = formatC(Female,format = 'e', digits = 2),
+   #      Male = formatC(Male,format = 'e', digits = 2)))
+#names(foo) <- NULL
+
+#foo[nrow(foo) +1, ] <- 0
+#foo[nrow(foo) +1, ] <- 1 
+
+#setting colors
+clrsp <- colorRampPalette(c("red", "white"))   
+clrs <- clrsp(nrow(data)) 
+
+#set breaks 
+breaks1 <- seq(-log10(0+1e-50), -log10(1), length.out = nrow(data))
+
+p <- grid.grabExpr(draw(ComplexHeatmap::pheatmap(as.matrix(-log10(data)),cluster_rows = F, 
+                                                 cluster_cols = F, cellwidth=50,
+                                                 show_colnames = F, fontsize = 7.1,
+                                                 display_numbers = as.matrix(data), 
+                                                 column_names_side = c("top"),name ="pvalue",
+                                                 angle_col = c("0"),  
+                                                 number_color =  "black", 
+                                                 gaps_col =c(1,2,3),
+                                                 col =clrs, breaks = breaks1)))
+
+#draw a white rectangle on the top of the plotted NAs
+rect <- rectGrob(gp=gpar(fill='white', col = 'white'), x=unit(-2.5,"npc"),
+                 y=unit(0.0035,"npc"),
+                 width=unit(9.2,"npc"), height=unit(0.048,"npc"))
+
+
+#ggsave('/Users/ma8244mi/Desktop/MGS-heatmap.pdf', all_plots, width = 30,height = 40, units = 'cm')
+
+```
+
+## add prevalence plot
+```{r}
+mgs <- which(names(data_log)=="shannon")+1
+mgs <- data_log[mgs:ncol(data_log)]
+
+mgs_prev <- mgs
+mgs_prev[,] = sapply(mgs_prev[,], function(x) replace (x, x>0, 1))
+
+mgs_perc<-data.frame(mgs=colnames(mgs_prev),Present=as.numeric(colSums(mgs_prev)))
+
+mgs_row <- as.data.frame(rowSums(mgs_prev))
+mean(mgs_row$`rowSums(mgs_prev)`)
+
+mgs_perc<-mgs_perc[order(-mgs_perc$Present),]
+#head(mgs_perc)
+mgs_perc <- mgs_perc %>% mutate(Percent = (Present/12028))
+#head(mgs_perc)
+```
+
+merge with BMI all analyses and match with the transform_to_table to get same order of the labels
+```{r}
+merged_sig100_bmi_perc <- merge(BMI_sig_100, mgs_perc, by = 'mgs')
+merged_sig100_bmi_perc_ordered <- merged_sig100_bmi_perc[match(transform_to_table$label, merged_sig100_bmi_perc$label), ]
+```
+
+```{r}
+merged_sig100_bmi_perc_ordered$label <- factor(merged_sig100_bmi_perc_ordered$label, levels = unique(merged_sig100_bmi_perc_ordered$label))
+
+prev_plot <- merged_sig100_bmi_perc_ordered %>%  ggplot(aes(x=Percent, y=label)) +geom_bar(stat = "identity",position="dodge", fill = 'skyblue3') +
+    #labs(x = "Prevalence") + 
+    #ggtitle('MGS') +
+    theme(axis.text.y = element_markdown(size = 6.5),
+          axis.text.x = element_text(size = 6.5),
+          axis.title.y = element_blank(),
+          axis.title.x = element_blank(),
+          panel.grid = element_blank(),
+          panel.background = element_rect(fill = "white"),
+          #plot.title = element_text(size = 11,hjust = -0.9),
+          plot.title = element_blank(),
+          plot.margin=grid::unit(c(2,0,4,2), "mm"),
+          legend.position = 'none') +
+    scale_y_discrete(limits=rev) + 
+    scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.5))
+all_plots <- grid.arrange( prev_plot,P,p, rect, widths = c(1.2,2, 1.2,0.2))
+
+ggsave('/Users/ma8244mi/Desktop/MGS_heatmap_AFMI.tiff', all_plots, height=30, width = 25, unit = 'cm')
+```
+
+
+##################################################################
+##################################################################
+##################################################################
+##################################################################
+##################################################################
+###### start with waist
+
+```{r}
+waist <- all_results_noint %>% filter(outcome == "waist")
+waist <- waist %>% filter(analysis == "main")
+waist_M3 <- waist %>% filter(model_name == "full_M3_waist_adjBMI")
+waist_M3_sig <- waist_M3 %>% filter(p_fdr_per_outcome <= 0.05)
+```
+
+
+```{r}
+P2 <- waist_M3_sig %>% filter(cohort == "all_cohorts") %>% 
+  filter(p_fdr_per_outcome<=0.05) %>%
+  ggplot(aes(x=maintaxa, y=est, ymin=ci_low, ymax=ci_high)) + geom_pointrange(aes(col=p_fdr_per_outcome), size=0.1) + coord_flip() + scale_colour_gradientn(colours=rainbow(4)) + theme_minimal() +  theme(axis.text.y = element_text(size=3))
+
+P2 
+```
+
+Add sex specific results 
+
+full_M3_waist_adjBMI
+full_stratM3_waist_adjBMI_females
+full_stratM3_waist_adjBMI_males
+```{r}
+waist_sex <- all_results %>% filter(analysis == "main") %>% filter(model_name == "full_M3_waist_adjBMI" | model_name == "full_stratM3_waist_adjBMI_females" | model_name =="full_stratM3_waist_adjBMI_males")
+
+P3 <- waist_sex %>% filter(model_name == "full_M3_waist_adjBMI") %>% filter(cohort == "all_cohorts") %>% filter(p_fdr_per_outcome <= 0.05) %>% ggplot(aes(x=mgs, y=est, ymin=ci_low, ymax=ci_high)) + 
+  geom_pointrange(aes(col=p_fdr_per_outcome), size=0.1) + coord_flip() + theme_minimal()
+
+P3
+```
+
+Add sex specific results
+```{r}
+#mark incl interaction pvalues for males and females and all,then select all sig pvalues and sort-u, 
+top_main <- all_results %>% filter(analysis == "main") %>% filter(cohort == "all_cohorts") %>% filter(model_name == "full_M3_waist_adjBMI") %>% filter(p_fdr_per_outcome <= 0.05)
+
+top_main_mgs <- top_main %>% dplyr::select(mgs)
+
+waist_sex_top <- merge(waist_sex, top_main_mgs, by = "mgs")
+
+waist_sex_top <- merge(waist_sex_top, maintaxa, by.x = 'mgs')
+
+```
+
+### Add non significant estimates to the models of the top 100 associations
+```{r chunk added by Mariam 10 feb 2023}
+waist_sex <- waist_sex %>% filter(cohort == "all_cohorts")
+
+merge_all_with_sig <- merge(waist_sex, waist_sex_top , by = 'mgs', all = FALSE) 
+
+# subset the needed data
+merge_all_with_sig_subset <- merge_all_with_sig %>% 
+  transmute(mgs = mgs, maintaxa = maintaxa, analysis = analysis.x, outcome = outcome.x,
+            cohort = cohort.x, model_name = model_name.x, 
+            n_obs = n_obs.x, est = est.x,
+            se = se.x,ci_low = ci_low.x, ci_high = ci_high.x, p = p.x, 
+            p_fdr_per_outcome = p_fdr_per_outcome.x)
+
+
+merge_all_with_sig_subset <- merge_all_with_sig_subset %>% 
+  mutate(phenotype = ifelse(model_name == 'full_stratM3_waist_adjBMI_females', 'Female', 
+                            ifelse(model_name == 'full_stratM3_waist_adjBMI_males', 'Male', 'All')))
+
+#remove duplicated rows
+merge_all_with_sig_subset <- unique(merge_all_with_sig_subset)
+```
+
+### re-structure the data to plot in the heatmap
+```{r chunk created by Mariam 10 feb 2023}
+to_table <- merge_all_with_sig_subset[,c(1,2,8,13,14)]
+transform_to_table <- to_table %>% spread(phenotype, p_fdr_per_outcome)
+
+transform_to_table<- transform_to_table %>%
+  group_by(mgs) %>%
+  summarise( maintaxa = maintaxa,
+             All = na.omit(All),
+             Female = na.omit(Female),
+             Male = na.omit(Male))
+
+
+transform_to_table <- unique(transform_to_table) 
+
+#use this table for the heatmap
+transform_to_table <- transform_to_table %>% 
+  mutate(All = signif(All,2),
+         Female = signif(Female,2),
+         Male = signif(Male,2))
+
+```
+```{r main BMI plot - top 100 + sex: chunk edited by Mariam 9 Feb 2023}
+
+P <- merge_all_with_sig_subset %>%  group_by (phenotype) %>% ggplot(aes(x=reorder(factor(maintaxa),est), y=est, ymin=ci_low, ymax=ci_high)) +
+  geom_pointrange(position = position_dodge(width = 1), size=0.1,aes(color=phenotype), shape = 20) + 
+  scale_color_manual(values = c("black", "hotpink", "green4"), labels = c("All", "Female", "Male")) + 
+  xlab("") + 
+  ylab('est (95% CI)') + 
+  ggtitle("maintaxa") + 
+ # coord_cartesian(ylim = c(-5, 30))+ 
+  coord_flip() + theme_minimal() + #scale_y_reverse() +
+  theme(axis.text.y = element_text(size= 6.5),
+        axis.text.x = element_text(size = 6.5),
+        axis.title.x = element_text(size = 9),
+        plot.title = element_text(size = 9.2,hjust = -0.09),
+        legend.position = 'none',
+        #legend.position = c(0.9,1.5),
+        #legend.position = 'bottom',
+       # legend.direction = 'horizontal',
+        plot.margin=grid::unit(c(2,0,0,0), "mm")) 
+P
+
+
+```
+
+### before plotting the heatmap make sure that the order of maintaxa matches order of estimates
+```{r created by Mariam 10 feb 2023}
+#get y axis labels in the order they were plotted
+desc_in_P <- ggplot_build(P)$layout$panel_params[[1]]$y$get_labels()
+#flip bottom to top
+desc_in_P<- rev(desc_in_P)
+
+
+# Extract the levels of the text_column  in df1 in the same order as the unique values in df2
+levels_df1 <- levels(as.factor(transform_to_table$maintaxa))[match(desc_in_P, levels(as.factor(transform_to_table$maintaxa)))]
+
+# Find the indices of the key values in the text_column column of the data frame
+indices <- match(levels_df1, transform_to_table$maintaxa)
+
+# Reorder the values in the text_column column based on the indices
+transform_to_table <- transform_to_table[indices,]
+```
+
+#plot both plots together
+```{r chunk added by Mariam 10 feb 2023}
+data <- transform_to_table[,c(3:5)]
+data[nrow(data) +1, ] <- 0
+data[nrow(data) +1, ] <- 1
+
+data <- as.matrix(data)
+#colnames(data) <- NULL
+
+#create this foo variable just to add numbers that are not numeric to the table because some numeric numbers are being converted to e notation and others are not
+foo <- as.data.frame(transform_to_table %>% 
+  mutate(All = formatC(All, format = 'e', digits = 2),
+         Female = formatC(Female,format = 'e', digits = 2),
+         Male = formatC(Male,format = 'e', digits = 2)))
+#names(foo) <- NULL
+
+foo[nrow(foo) +1, ] <- 0
+foo[nrow(foo) +1, ] <- 1 
+
+#setting colors
+clrsp <- colorRampPalette(c("red", "white"))   
+clrs <- clrsp(nrow(data)) 
+
+#set breaks 
+breaks1 <- seq(-log10(0+1e-50), -log10(1), length.out = nrow(data))
+
+p <- grid.grabExpr(draw(ComplexHeatmap::pheatmap(-log10(data),cluster_rows = F, cluster_cols = F, cellwidth=60,
+                                                 display_numbers = as.matrix(foo[,c(3:5)]), 
+                                                 column_names_side = c("top"),name ="pvalue",
+                                                 angle_col = c("0"),  number_color = "black",
+                                                 fontsize_col = 9, gaps_col = c(1,2),
+                                                 col =clrs, breaks = breaks1)))
+
+#draw a white rectangle on the top of the plotted NAs
+rect <- rectGrob(gp=gpar(fill='white', col = 'white'), x=unit(0.01,"npc"), y=unit(0.0005,"npc"),
+                 width=unit(9.5,"npc"), height=unit(0.048,"npc"))
+
+
+all_plots <- grid.arrange( P,p, rect, widths = c(2, 1,0.2))
+
+ggsave('/Users/ma8244mi/Desktop/MGS-heatmap_waist.pdf', all_plots, width = 30,height = 40, units = 'cm')
+
+```
+
+```{r}
+export(merge_all_with_sig_subset, '/Volumes/research/metabogut/BMI_2021/summaryresults/MGS/waist_sigAll_females_males.xlsx')
+```
+
+#####################################################################
+###### start with whr
+
+```{r}
+whr <- all_results_noint %>% filter(outcome == "WHR")
+whr <- whr %>% filter(analysis == "main")
+whr_M2 <- whr %>% filter(model_name == "full_M2_WHR_adjBMI")
+whr_M2_sig <- whr_M2 %>% filter(p_fdr_per_outcome <= 0.05)
+```
+
+
+```{r}
+P4 <- whr_M2_sig %>% filter(cohort == "all_cohorts") %>% 
+  filter(p_fdr_per_outcome<=0.05) %>%
+  ggplot(aes(x=maintaxa, y=est, ymin=ci_low, ymax=ci_high)) + geom_pointrange(aes(col=p_fdr_per_outcome), size=0.1) + coord_flip() + scale_colour_gradientn(colours=rainbow(4)) + theme_minimal() +  theme(axis.text.y = element_text(size=3))
+
+P4
+```
+
+Add sex specific results 
+
+full_M2_WHR_adjBMI
+full_stratM2_WHR_adjBMI_females
+full_stratM2_WHR_adjBMI_males
+```{r}
+whr_sex <- all_results %>% filter(analysis == "main") %>% filter(model_name == "full_M2_WHR_adjBMI" | model_name == "full_stratM2_WHR_adjBMI_females" | model_name =="full_stratM2_WHR_adjBMI_males")
+
+P5 <- whr_sex %>% filter(model_name == "full_M2_WHR_adjBMI") %>% filter(cohort == "all_cohorts") %>% filter(p_fdr_per_outcome <= 0.05) %>% ggplot(aes(x=mgs, y=est, ymin=ci_low, ymax=ci_high)) + 
+  geom_pointrange(aes(col=p_fdr_per_outcome), size=0.1) + coord_flip() + theme_minimal()
+
+P5
+```
+Add sex specific results
+```{r}
+#mark incl interaction pvalues for males and females and all,then select all sig pvalues and sort-u, 
+top_main <- all_results %>% filter(analysis == "main") %>% filter(cohort == "all_cohorts") %>% filter(model_name == "full_M2_WHR_adjBMI") %>% filter(p_fdr_per_outcome <= 0.05)
+
+top_main_mgs <- top_main %>% dplyr::select(mgs)
+
+whr_sex_top <- merge(whr_sex, top_main_mgs, by = "mgs")
+
+whr_sex_top <- merge(whr_sex_top, maintaxa, by.x = 'mgs')
+
+```
+
+### Add non significant estimates to the models of the top 100 associations
+```{r}
+whr_sex <- whr_sex %>% filter(cohort == "all_cohorts")
+
+merge_all_with_sig <- merge(whr_sex, whr_sex_top , by = 'mgs', all = FALSE) 
+
+# subset the needed data
+merge_all_with_sig_subset <- merge_all_with_sig %>% 
+  transmute(mgs = mgs, maintaxa = maintaxa, analysis = analysis.x, outcome = outcome.x,
+            cohort = cohort.x, model_name = model_name.x, 
+            n_obs = n_obs.x, est = est.x,
+            se = se.x,ci_low = ci_low.x, ci_high = ci_high.x, p = p.x, 
+            p_fdr_per_outcome = p_fdr_per_outcome.x)
+
+
+merge_all_with_sig_subset <- merge_all_with_sig_subset %>% 
+  mutate(phenotype = ifelse(model_name == 'full_stratM2_WHR_adjBMI_females', 'Female', 
+                            ifelse(model_name == 'full_stratM2_WHR_adjBMI_males', 'Male', 'All')))
+
+#remove duplicated rows
+merge_all_with_sig_subset <- unique(merge_all_with_sig_subset)
+```
+
+### re-structure the data to plot in the heatmap
+```{r chunk created by Mariam 10 feb 2023}
+to_table <- merge_all_with_sig_subset[,c(1,2,8,13,14)]
+transform_to_table <- to_table %>% spread(phenotype, p_fdr_per_outcome)
+
+transform_to_table<- transform_to_table %>%
+  group_by(mgs) %>%
+  summarise( maintaxa = maintaxa,
+             All = na.omit(All),
+             Female = na.omit(Female),
+             Male = na.omit(Male))
+
+
+transform_to_table <- unique(transform_to_table) 
+
+#use this table for the heatmap
+transform_to_table <- transform_to_table %>% 
+  mutate(All = signif(All,2),
+         Female = signif(Female,2),
+         Male = signif(Male,2))
+
+```
+```{r}
+
+P <- merge_all_with_sig_subset %>%  group_by (phenotype) %>% ggplot(aes(x=reorder(factor(maintaxa),est), y=est, ymin=ci_low, ymax=ci_high)) +
+  geom_pointrange(position = position_dodge(width = 1), size=0.1,aes(color=phenotype), shape = 20) + 
+  scale_color_manual(values = c("black", "hotpink", "green4"), labels = c("All", "Female", "Male")) + 
+  xlab("") + 
+  ylab('est (95% CI)') + 
+  ggtitle("maintaxa") + 
+ # coord_cartesian(ylim = c(-5, 30))+ 
+  coord_flip() + theme_minimal() + #scale_y_reverse() +
+  theme(axis.text.y = element_text(size= 6.5),
+        axis.text.x = element_text(size = 6.5),
+        axis.title.x = element_text(size = 9),
+        plot.title = element_text(size = 9.2,hjust = -0.09),
+        legend.position = 'none',
+        #legend.position = c(0.9,1.5),
+        #legend.position = 'bottom',
+       # legend.direction = 'horizontal',
+        plot.margin=grid::unit(c(2,0,0,0), "mm")) 
+P
+
+
+```
+### before plotting the heatmap make sure that the order of maintaxa matches order of estimates
+```{r}
+#get y axis labels in the order they were plotted
+desc_in_P <- ggplot_build(P)$layout$panel_params[[1]]$y$get_labels()
+#flip bottom to top
+desc_in_P<- rev(desc_in_P)
+
+
+# Extract the levels of the text_column  in df1 in the same order as the unique values in df2
+levels_df1 <- levels(as.factor(transform_to_table$maintaxa))[match(desc_in_P, levels(as.factor(transform_to_table$maintaxa)))]
+
+# Find the indices of the key values in the text_column column of the data frame
+indices <- match(levels_df1, transform_to_table$maintaxa)
+
+# Reorder the values in the text_column column based on the indices
+transform_to_table <- transform_to_table[indices,]
+```
+
+#plot both plots together
+```{r}
+data <- transform_to_table[,c(3:5)]
+data[nrow(data) +1, ] <- 0
+data[nrow(data) +1, ] <- 1
+
+data <- as.matrix(data)
+#colnames(data) <- NULL
+
+#create this foo variable just to add numbers that are not numeric to the table because some numeric numbers are being converted to e notation and others are not
+foo <- as.data.frame(transform_to_table %>% 
+  mutate(All = formatC(All, format = 'e', digits = 2),
+         Female = formatC(Female,format = 'e', digits = 2),
+         Male = formatC(Male,format = 'e', digits = 2)))
+#names(foo) <- NULL
+
+foo[nrow(foo) +1, ] <- 0
+foo[nrow(foo) +1, ] <- 1 
+
+#setting colors
+clrsp <- colorRampPalette(c("red", "white"))   
+clrs <- clrsp(nrow(data)) 
+
+#set breaks 
+breaks1 <- seq(-log10(0+1e-50), -log10(1), length.out = nrow(data))
+
+p <- grid.grabExpr(draw(ComplexHeatmap::pheatmap(-log10(data),cluster_rows = F, cluster_cols = F, cellwidth=60,
+                                                 display_numbers = as.matrix(foo[,c(3:5)]), 
+                                                 column_names_side = c("top"),name ="pvalue",
+                                                 angle_col = c("0"),  number_color = "black",
+                                                 fontsize_col = 9, gaps_col = c(1,2),
+                                                 col =clrs, breaks = breaks1)))
+
+#draw a white rectangle on the top of the plotted NAs
+rect <- rectGrob(gp=gpar(fill='white', col = 'white'), x=unit(0.01,"npc"), y=unit(0.0005,"npc"),
+                 width=unit(9.5,"npc"), height=unit(0.048,"npc"))
+
+
+all_plots <- grid.arrange( P,p, rect, widths = c(2, 1,0.2))
+
+ggsave('/Users/ma8244mi/Desktop/MGS-heatmap_whr.pdf', all_plots, width = 30,height = 40, units = 'cm')
+
+```
+
+```{r}
+export(merge_all_with_sig_subset, '/Volumes/research/metabogut/BMI_2021/summaryresults/MGS/whr_sigAll_females_males.xlsx')
+```
