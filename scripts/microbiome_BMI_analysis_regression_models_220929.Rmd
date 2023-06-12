@@ -1,0 +1,555 @@
+---
+title: "Microbiome BMI analyses - regression models"
+subtitle: "Main analysis and three sensitivity analyses"
+author: "Marlena Maziarz"
+date: "`r format(Sys.Date(), '%B %e, %Y')`"
+output:
+  bookdown::html_document2:
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+    fig_caption: yes
+  bookdown::pdf_document2:
+    toc: yes
+    toc_depth: 5
+    fig_caption: yes
+  bookdown::word_document2:
+    toc: yes
+    toc_depth: 5
+    fig_caption: yes
+always_allow_html: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+# The main analysis
+
+## Setup
+Load the data, source the helper functions etc. The dataset was prepared by Louise, filtered at 5% and log-transformed, n = 12028 (data_log_filt5_n12028_update220608.Rdata in metabogut/BMI_2021/Louise_intermediate/).
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(rio)
+library(here)
+
+results_version <- '221109'
+
+##################################################################################################################################
+# Source the helper functions
+#source(here::here('code', 'bmi_paper_model_fitting_helper_functions_v220929.R')) # NOTE THE VERSION, make sure it's the right one!
+##################################################################################################################################
+
+source("/Volumes/research/metabogut/BMI_2021/marlena/code/bmi_paper_model_fitting_helper_functions_v220929.R")
+
+##################################################################################################################################
+#### LOAD THE DATA - NOTE THE VERSION, make sure it's the right one!
+###  the data was filtered at 5%, log transformed, n = 12028
+### The script to generate the data can be found here: XXXXXXXXX 
+### NOTE: the path may be different for different users, for example, for Louise it is:
+### load("/Volumes/research/metabogut/BMI_2021/Louise_intermediate/data_log_filt5_n12028_update220608.RData")
+### and for Marlena it is:
+### load("/Volumes/metabogut/BMI_2021/Louise_intermediate/data_log_filt5_n12028_update220608.RData") 
+##################################################################################################################################
+
+# loads 'data_log' 
+load("/Volumes/research/metabogut/BMI_2021/Louise_intermediate/data_log_filt5_n12028_update220608_221104.RData") 
+
+data_log <- data_log %>% 
+  mutate(male = sex == 1, 
+         WHR = WH_rat)
+```
+
+
+
+```{r}
+model_names <- c('M1_BMI',
+                 'M2_WHR_adjBMI',
+                 'M3_waist_adjBMI',
+                 'stratM1_BMI_females',
+                 'stratM1_BMI_males',
+                 'intM1_BMI',
+                 'stratM2_WHR_adjBMI_females',
+                 'stratM2_WHR_adjBMI_males',
+                 'intM2_WHR_adjBMI',
+                 'stratM3_waist_adjBMI_females',
+                 'stratM3_waist_adjBMI_males',
+                 'intM3_waist_adjBMI')
+
+# covariates for each of the base models
+base_model_covariates_in_all_models <- c('age', 'shannon', 'country_birth', 'Cohort')
+
+base_model_covariates <- list(
+  M1_BMI                       = c(base_model_covariates_in_all_models, 'male'),
+  M2_WHR_adjBMI                = c(base_model_covariates_in_all_models, 'male', 'BMI'),
+  M3_waist_adjBMI              = c(base_model_covariates_in_all_models, 'male', 'BMI'),
+  stratM1_BMI_females          = c(base_model_covariates_in_all_models),
+  stratM1_BMI_males            = c(base_model_covariates_in_all_models),
+  intM1_BMI                    = c(base_model_covariates_in_all_models, 'male'),
+  stratM2_WHR_adjBMI_females   = c(base_model_covariates_in_all_models, 'BMI'),
+  stratM2_WHR_adjBMI_males     = c(base_model_covariates_in_all_models, 'BMI'),
+  intM2_WHR_adjBMI             = c(base_model_covariates_in_all_models, 'male', 'BMI'),
+  stratM3_waist_adjBMI_females = c(base_model_covariates_in_all_models, 'BMI'),
+  stratM3_waist_adjBMI_males   = c(base_model_covariates_in_all_models, 'BMI'),
+  intM3_waist_adjBMI           = c(base_model_covariates_in_all_models, 'male', 'BMI'))
+
+# covariates for each of the fully adjusted models
+full_model_covariates_in_all_models <- c('age', 'shannon', 'country_birth', 'Cohort', 'physical_activity', 'metformin', 'PPI', 'Fiber')
+
+full_model_covariates <- list(
+  M1_BMI                       = c(full_model_covariates_in_all_models, 'male'),
+  M2_WHR_adjBMI                = c(full_model_covariates_in_all_models, 'male', 'BMI'),
+  M3_waist_adjBMI              = c(full_model_covariates_in_all_models, 'male', 'BMI'),
+  stratM1_BMI_females          = c(full_model_covariates_in_all_models),
+  stratM1_BMI_males            = c(full_model_covariates_in_all_models),
+  intM1_BMI                    = c(full_model_covariates_in_all_models, 'male'),
+  stratM2_WHR_adjBMI_females   = c(full_model_covariates_in_all_models, 'BMI'),
+  stratM2_WHR_adjBMI_males     = c(full_model_covariates_in_all_models, 'BMI'),
+  intM2_WHR_adjBMI             = c(full_model_covariates_in_all_models, 'male', 'BMI'),
+  stratM3_waist_adjBMI_females = c(full_model_covariates_in_all_models, 'BMI'),
+  stratM3_waist_adjBMI_males   = c(full_model_covariates_in_all_models, 'BMI'),
+  intM3_waist_adjBMI           = c(full_model_covariates_in_all_models, 'male', 'BMI'))
+
+model_outcome <- list(
+  M1_BMI                       = 'BMI',
+  M2_WHR_adjBMI                = 'WHR',
+  M3_waist_adjBMI              = 'waist',
+  stratM1_BMI_females          = 'BMI',
+  stratM1_BMI_males            = 'BMI',
+  intM1_BMI                    = 'BMI',
+  stratM2_WHR_adjBMI_females   = 'WHR',
+  stratM2_WHR_adjBMI_males     = 'WHR',
+  intM2_WHR_adjBMI             = 'WHR',
+  stratM3_waist_adjBMI_females = 'waist',
+  stratM3_waist_adjBMI_males   = 'waist',
+  intM3_waist_adjBMI           = 'waist')
+
+model_with_interaction <- list(
+  M1_BMI                       = F,
+  M2_WHR_adjBMI                = F,
+  M3_waist_adjBMI              = F,
+  stratM1_BMI_females          = F,
+  stratM1_BMI_males            = F,
+  intM1_BMI                    = T,
+  stratM2_WHR_adjBMI_females   = F,
+  stratM2_WHR_adjBMI_males     = F,
+  intM2_WHR_adjBMI             = T,
+  stratM3_waist_adjBMI_females = F,
+  stratM3_waist_adjBMI_males   = F,
+  intM3_waist_adjBMI           = T)
+
+model_strata <- list(
+  M1_BMI                       = 'all',
+  M2_WHR_adjBMI                = 'all',
+  M3_waist_adjBMI              = 'all',
+  stratM1_BMI_females          = 'females',
+  stratM1_BMI_males            = 'males',
+  intM1_BMI                    = 'all',
+  stratM2_WHR_adjBMI_females   = 'females',
+  stratM2_WHR_adjBMI_males     = 'males',
+  intM2_WHR_adjBMI             = 'all',
+  stratM3_waist_adjBMI_females = 'females',
+  stratM3_waist_adjBMI_males   = 'males',
+  intM3_waist_adjBMI           = 'all')
+```
+
+
+## Model fitting
+
+In this part we use all the data, ie. data from the three cohorts and adjust for cohort.
+
+```{r}
+all_results_main <- NULL
+
+for(curr_model in model_names){
+    
+    curr_results <- get_results_for_bmi_paper(d = data_log,
+                                              outcome = model_outcome[[curr_model]], 
+                                              model_name = curr_model,
+                                              model_strata = model_strata[[curr_model]],
+                                              suppress_printing = F,
+                                              base_model_vars_to_adjust_for = base_model_covariates[[curr_model]],
+                                              full_model_vars_to_adjust_for = full_model_covariates[[curr_model]],
+                                              glm_family = 'gaussian',
+                                              mgs_sex_interaction = model_with_interaction[[curr_model]],
+                                              sex_var = 'male')
+    
+    export(curr_results, file = here::here('results', 'main_analyses', paste0(curr_model, '_results_', results_version, '.xlsx')))
+    all_results_main <- bind_rows(all_results_main, curr_results)
+    
+    rm(curr_results)
+}
+
+all_results_main <- all_results_main %>%
+    mutate(analysis = 'main',
+           cohort = 'all_cohorts') 
+
+```
+
+
+
+# Sensitivity analyses
+
+## Sensitivity analysis 1: no antibiotics
+
+Rerun all models excluding the subjects who had taken antibiotics within 6 months prior to sampling. 
+
+```{r}
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# sensitivity 1 - exclude subjects who took antibiotics in the last 6 months
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# rerun all models
+
+# covariates for the base models
+# sens 1, here the covariates are the same as for the main analysis
+
+# covariates for the full models
+# sens 1, same as for the main analysis
+
+data_log_no_antibiotics <- data_log %>%
+    filter(antibiotics == 0)
+
+all_results_sens1 <- NULL
+
+for(curr_model in model_names){
+    
+    curr_results <- get_results_for_bmi_paper(d = data_log_no_antibiotics,
+                                              outcome = model_outcome[[curr_model]], # same as in the main analysis
+                                              model_name = curr_model, # same as in the main analysis
+                                              model_strata = model_strata[[curr_model]], # same as in the main analysis
+                                              base_model_vars_to_adjust_for = base_model_covariates[[curr_model]], # same as in the main analysis
+                                              full_model_vars_to_adjust_for = full_model_covariates[[curr_model]], # same as in the main analysis
+                                              mgs_sex_interaction = model_with_interaction[[curr_model]]) # same as in the main analysis
+    
+    export(curr_results, file = here::here('results', 'sensitivity1_no_antibiotics', paste0(curr_model, '_results_', results_version, '.xlsx')))
+    all_results_sens1 <- bind_rows(all_results_sens1, curr_results)
+    
+    rm(curr_results)
+}
+
+rm(data_log_no_antibiotics) # no longer needed
+
+all_results_sens1 <- all_results_sens1 %>%
+    mutate(analysis = 'sens1',
+           cohort = 'all_cohorts') 
+
+```
+
+## Sensitivity analysis 2: include adjustment for height
+
+Rerun all models except those with BMI as the outcome, adjusting for height in addition to adjusting for BMI
+
+```{r}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# sensitivity 2 - add an adjustment for height
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# models to rerun
+model_names_sens2 <-  c('M2_WHR_adjBMI',
+                        'M3_waist_adjBMI',
+                        'stratM2_WHR_adjBMI_females',
+                        'stratM2_WHR_adjBMI_males',
+                        'intM2_WHR_adjBMI',
+                        'stratM3_waist_adjBMI_females',
+                        'stratM3_waist_adjBMI_males',
+                        'intM3_waist_adjBMI')
+
+
+# covariates for the base models, same as in the main analyses plus 'height'
+
+# covariates for the full models, same as in the main analyses plus 'height'
+
+
+all_results_sens2 <- NULL
+
+for(curr_model in model_names_sens2){
+    
+    curr_results <- get_results_for_bmi_paper(d = data_log,
+                                              outcome = model_outcome[[curr_model]], # same as in the main analysis
+                                              model_name = curr_model, # same as in the main analysis
+                                              model_strata = model_strata[[curr_model]], # same as in the main analysis
+                                              base_model_vars_to_adjust_for = c(base_model_covariates[[curr_model]], 'height'), 
+                                              full_model_vars_to_adjust_for = c(full_model_covariates[[curr_model]], 'height'), 
+                                              mgs_sex_interaction = model_with_interaction[[curr_model]]) # same as in the main analysis
+    
+    export(curr_results, file = here::here('results', 'sensitivity2_adj_for_height', paste0(curr_model, '_results_', results_version, '.xlsx')))
+    all_results_sens2 <- bind_rows(all_results_sens2, curr_results)
+    
+    rm(curr_results)
+}
+
+all_results_sens2 <- all_results_sens2 %>%
+    mutate(analysis = 'sens2',
+           cohort = 'all_cohorts') 
+```
+
+## Sensitivity analysis 3: exclude adjustment for BMI
+
+Rerun all models except those with BMI as the outcome, excluding the adjustment for BMI
+
+```{r}
+
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# sensitivity 3  - remove adjustment for BMI
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+# models to rerun
+model_names_sens3 <- model_names_sens2 # same as in sens 2
+
+# covariates for the base models, same as in the main analyses just excluding 'BMI'
+
+# covariates for the full models, same as in the main analyses just excluding 'BMI'
+
+all_results_sens3 <- NULL
+
+for(curr_model in model_names_sens3){
+    
+    curr_results <- get_results_for_bmi_paper(d = data_log,
+                                              outcome = model_outcome[[curr_model]], # same as in the main analysis
+                                              model_name = curr_model, # same as in the main analysis
+                                              model_strata = model_strata[[curr_model]], # same as in the main analysis
+                                              base_model_vars_to_adjust_for = base_model_covariates[[curr_model]][!base_model_covariates[[curr_model]] == 'BMI'], 
+                                              full_model_vars_to_adjust_for = full_model_covariates[[curr_model]][!full_model_covariates[[curr_model]] == 'BMI'], 
+                                              mgs_sex_interaction = model_with_interaction[[curr_model]]) # same as in the main analysis
+    
+    export(curr_results, file = here::here('results', 'sensitivity3_no_adj_for_BMI', paste0(curr_model, '_results_', results_version, '.xlsx')))
+    all_results_sens3 <- bind_rows(all_results_sens3, curr_results)
+    
+    rm(curr_results)
+}
+
+all_results_sens3 <- all_results_sens3 %>%
+    mutate(analysis = 'sens3',
+           cohort = 'all_cohorts') 
+```
+
+
+# Stratified by cohort
+Only the main analyses (not the sensitivity analyses) will be analyzed stratifying on cohort. 
+
+## Malm\"o Offspring Study (MOS)
+
+```{r}
+
+data_log_MOS_only <- data_log %>%
+    filter(Cohort == 'MalmoOffspringStudy')
+
+all_results_main_MOS_only <- NULL
+
+for(curr_model in model_names){
+    
+    curr_results <- get_results_for_bmi_paper(d = data_log_MOS_only,
+                                              outcome = model_outcome[[curr_model]], 
+                                              model_name = curr_model,
+                                              model_strata = model_strata[[curr_model]],
+                                              base_model_vars_to_adjust_for = base_model_covariates[[curr_model]][!base_model_covariates[[curr_model]] == 'Cohort'],
+                                              full_model_vars_to_adjust_for = full_model_covariates[[curr_model]][!full_model_covariates[[curr_model]] == 'Cohort'],
+                                              mgs_sex_interaction = model_with_interaction[[curr_model]])
+    
+    export(curr_results, file = here::here('results', 'main_analyses_MOS_only', paste0(curr_model, '_results_', results_version, '.xlsx')))
+    all_results_main_MOS_only <- bind_rows(all_results_main_MOS_only, curr_results)
+    
+    rm(curr_results)
+}
+
+rm(data_log_MOS_only) # no longer needed
+
+all_results_main_MOS_only <- all_results_main_MOS_only %>%
+    mutate(analysis = 'main',
+           cohort = 'MOS_only') 
+```
+
+
+
+## SCAPIS Malm\"o
+## changed from SCAPIS to SCAPIS_Malmo 221108 ##
+```{r}
+data_log_SCAPIS_malmo <- data_log %>%
+    filter(Cohort == 'SCAPIS_Malmo')
+
+all_results_main_SCAPIS_malmo_only <- NULL
+
+for(curr_model in model_names){
+    
+    curr_results <- get_results_for_bmi_paper(d = data_log_SCAPIS_malmo,
+                                              outcome = model_outcome[[curr_model]], 
+                                              model_name = curr_model,
+                                              model_strata = model_strata[[curr_model]],
+                                              base_model_vars_to_adjust_for = base_model_covariates[[curr_model]][!base_model_covariates[[curr_model]] == 'Cohort'],
+                                              full_model_vars_to_adjust_for = full_model_covariates[[curr_model]][!full_model_covariates[[curr_model]] == 'Cohort'],
+                                              mgs_sex_interaction = model_with_interaction[[curr_model]])
+    
+    export(curr_results, file = here::here('results', 'main_analyses_SCAPIS_malmo_only', paste0(curr_model, '_results_', results_version, '.xlsx')))
+    all_results_main_SCAPIS_malmo_only <- bind_rows(all_results_main_SCAPIS_malmo_only, curr_results)
+    
+    rm(curr_results)
+}
+
+rm(data_log_SCAPIS_malmo) # no longer needed
+
+all_results_main_SCAPIS_malmo_only <- all_results_main_SCAPIS_malmo_only %>%
+    mutate(analysis = 'main',
+           cohort = 'SCAPIS_malmo_only') 
+```
+
+
+
+## SCAPIS Uppsala
+
+```{r}
+data_log_SCAPIS_uppsala <- data_log %>%
+    filter(Cohort == 'SCAPIS_Uppsala')
+
+all_results_main_SCAPIS_uppsala_only <- NULL
+
+for(curr_model in model_names){
+    
+    curr_results <- get_results_for_bmi_paper(d = data_log_SCAPIS_uppsala,
+                                              outcome = model_outcome[[curr_model]], 
+                                              model_name = curr_model,
+                                              model_strata = model_strata[[curr_model]],
+                                              base_model_vars_to_adjust_for = base_model_covariates[[curr_model]][!base_model_covariates[[curr_model]] == 'Cohort'],
+                                              full_model_vars_to_adjust_for = full_model_covariates[[curr_model]][!full_model_covariates[[curr_model]] == 'Cohort'],
+                                              mgs_sex_interaction = model_with_interaction[[curr_model]])
+    
+    export(curr_results, file = here::here('results', 'main_analyses_SCAPIS_uppsala_only', paste0(curr_model, '_results_', results_version, '.xlsx')))
+    all_results_main_SCAPIS_uppsala_only <- bind_rows(all_results_main_SCAPIS_uppsala_only, curr_results)
+    
+    rm(curr_results)
+}
+
+rm(data_log_SCAPIS_uppsala) # no longer needed
+
+all_results_main_SCAPIS_uppsala_only <- all_results_main_SCAPIS_uppsala_only %>%
+    mutate(analysis = 'main',
+           cohort = 'SCAPIS_uppsala_only') 
+```
+
+
+
+
+
+# Put all the results together
+
+```{r}
+
+all_results <- bind_rows(all_results_main,
+                         all_results_sens1,
+                         all_results_sens2,
+                         all_results_sens3,
+                         all_results_main_MOS_only,
+                         all_results_main_SCAPIS_malmo_only,
+                         all_results_main_SCAPIS_uppsala_only)
+
+# cleanup
+rm(all_results_main, all_results_sens1, all_results_sens2, all_results_sens3, 
+   all_results_main_MOS_only, all_results_main_SCAPIS_malmo_only, all_results_main_SCAPIS_uppsala_only)
+
+save(all_results, file = 'tmp_all_results.Rdata')
+
+```
+
+
+# FDR adjustement
+
+The adjustement is for each outcome separately, ie. it includes all the analyses for a given outcome, including stratified by cohort and the sensitivity analyses.
+
+```{r}
+
+# add an 'outcome' column just to make sure the FDR was done on the correct rows
+all_results$outcome <- NA
+
+# get the index for the rows corresponding to BMI and get the FDR adjusted p-values for those rows
+ix <- str_detect(all_results$model_name, '_BMI')
+all_results$p_fdr_per_outcome[ix] <- p.adjust(all_results$p[ix], method = 'fdr')
+all_results$outcome[ix] <- 'BMI'
+
+# get the index for the rows corresponding to WHR
+ix <- str_detect(all_results$model_name, 'WHR')
+all_results$p_fdr_per_outcome[ix] <- p.adjust(all_results$p[ix], method = 'fdr')
+all_results$outcome[ix] <- 'WHR'
+
+# get the index for the rows corresponding to waist
+ix <- str_detect(all_results$model_name, 'waist')
+all_results$p_fdr_per_outcome[ix] <- p.adjust(all_results$p[ix], method = 'fdr')
+all_results$outcome[ix] <- 'waist'
+
+all_results <- all_results %>%
+    select(analysis, outcome, cohort, everything())
+
+rm(ix) # cleanup
+```
+
+# Export the results
+
+```{r}
+
+all_results_main <- all_results %>% 
+    filter(analysis == 'main', 
+           cohort == 'all_cohorts')
+export(all_results_main, 
+       file = here::here('results', 'main_analyses', paste0('all_results_main_', results_version, '.xlsx')))
+
+# split the results file into two files for main effects only and interactions only
+export(all_results_main %>% 
+           filter(str_detect(mgs, 'maleTRUE', negate = T)),
+       file = here::here('results', 'main_analyses', paste0('all_results_main_MAIN_EFFECTS_ONLY_', results_version, '.xlsx')))
+export(all_results_main %>% 
+           filter(str_detect(mgs, 'maleTRUE', negate = F)),
+       file = here::here('results', 'main_analyses', paste0('all_results_main_INTERACTIONS_ONLY_', results_version, '.xlsx')))
+
+
+all_results_sens1 <- all_results %>% 
+    filter(analysis == 'sens1', 
+           cohort == 'all_cohorts')
+export(all_results_sens1, file = here::here('results', 'sensitivity1_no_antibiotics', paste0('all_results_sens1_', results_version, '.xlsx')))
+
+
+all_results_sens2 <- all_results %>% 
+    filter(analysis == 'sens2', 
+           cohort == 'all_cohorts')
+export(all_results_sens2, file = here::here('results', 'sensitivity2_adj_for_height', paste0('all_results_sens2_', results_version, '.xlsx')))
+
+
+all_results_sens3 <- all_results %>% 
+    filter(analysis == 'sens3', 
+           cohort == 'all_cohorts')
+export(all_results_sens3, file = here::here('results', 'sensitivity3_no_adj_for_BMI', paste0('all_results_sens3_', results_version, '.xlsx')))
+
+
+all_results_main_MOS_only <- all_results %>% 
+    filter(analysis == 'main', 
+           cohort == 'MOS_only')
+export(all_results_main_MOS_only, 
+       file = here::here('results', 'main_analyses_MOS_only', paste0('all_results_main_MOS_only', results_version, '.xlsx')))
+
+all_results_main_SCAPIS_malmo_only <- all_results %>% 
+    filter(analysis == 'main', 
+           cohort == 'SCAPIS_malmo_only')
+export(all_results_main_SCAPIS_malmo_only, 
+       file = here::here('results', 'main_analyses_SCAPIS_malmo_only', paste0('all_results_main_SCAPIS_malmo_only', results_version, '.xlsx')))
+
+all_results_main_SCAPIS_uppsala_only <- all_results %>% 
+    filter(analysis == 'main', 
+           cohort == 'SCAPIS_uppsala_only')
+export(all_results_main_SCAPIS_uppsala_only, 
+       file = here::here('results', 'main_analyses_SCAPIS_uppsala_only', paste0('all_results_main_SCAPIS_uppsala_only', results_version, '.xlsx')))
+
+
+# export all results into a single file
+export(all_results, file = here::here('results', paste0('all_results_', results_version, '.xlsx')))
+save(all_results, file = here::here('results', paste0('all_results_', results_version, '.Rdata')))
+
+# split the results file into two files for main effects only and interactions only
+export(all_results %>% 
+           filter(str_detect(mgs, 'maleTRUE', negate = T)),
+       file = here::here('results', paste0('all_results_MAIN_EFFECTS_ONLY_', results_version, '.xlsx')))
+export(all_results %>% 
+           filter(str_detect(mgs, 'maleTRUE', negate = F)), 
+       file = here::here('results', paste0('all_results_INTERACTIONS_ONLY_', results_version, '.xlsx')))
+
+```
