@@ -6,7 +6,7 @@ date: "2023-02-28"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = '/Volumes/research/metabogut/BMI_2021')
 ```
 
 ### Run packages
@@ -36,7 +36,7 @@ library(here)
 
 ### read data
 ```{r}
-load("/Volumes/research/metabogut/BMI_2021/marlena/results_version_221109/all_results_221109.Rdata")
+load("marlena/results_version_221109/all_results_221109.Rdata")
 
 taxonomy <- read_xlsx("/Volumes/research/metabogut/Metagenomics_CM/Data LUNGUT/Updated_taxonomy_annotation_AronEklundCM211021/HG3.A.7_tax_updatedTaxonomy_NCBIversion210502_fromAronEklundCM211013.xlsx")
 ```
@@ -213,6 +213,7 @@ transform_to_table <- transform_to_table[indices,]
 data_bmi_plot <- merge_all_with_sig_subset[merge_all_with_sig_subset$phenotype == 'BMI',]
 
 P_bmi <- data_bmi_plot %>% ggplot(aes(x=reorder(factor(label),est), y=est, ymin=ci_low, ymax=ci_high)) +
+  geom_hline(yintercept = 0, color = "grey80")+
   geom_pointrange(size=0.1,aes(color=phenotype), shape = 20) + 
   scale_color_manual(values = 'grey30', labels = 'BMI') + 
   xlab("") + 
@@ -220,8 +221,7 @@ P_bmi <- data_bmi_plot %>% ggplot(aes(x=reorder(factor(label),est), y=est, ymin=
   ggtitle("MGS") + 
   # coord_cartesian(ylim = c(-5, 30))+ 
   coord_flip() + theme_minimal() + 
-  geom_hline(yintercept = 0, color = "grey80")+
-  theme(axis.text.y = element_markdown(size= 5),
+  theme(axis.text.y = element_markdown(size= 6.5),
         axis.text.x = element_markdown(size = 6.5),
         axis.title.x = element_text(size = 9),
         plot.title = element_text(size = 9.2,hjust = -0.3),
@@ -289,7 +289,7 @@ p_bmi_hp <- grid.grabExpr(draw(ComplexHeatmap::pheatmap(-log10(data_bmi_hp),
                                                         number_color = "black", 
                                                         border_color = NA,
                                                         fontsize_col = 9.3,
-                                                        fontsize = 8.2,
+                                                        fontsize = 8.3,
                                                         legend = FALSE,
                                                         col =clrs, breaks =
                                                           breaks1)))
@@ -325,6 +325,7 @@ data_waist_plot$label <- factor(data_waist_plot$label, levels=data_waist_plot$la
 
 
 P_waist <- data_waist_plot %>% ggplot(aes(x=maintaxa, y=est, ymin=ci_low, ymax=ci_high)) +
+  geom_hline(yintercept = 0, color = "grey80")+
   geom_pointrange(size=0.1,aes(color=phenotype), shape = 20) + 
   scale_color_manual(values = 'mediumorchid', labels = 'WaistadjBMI') + scale_x_discrete(limits=rev)+
   xlab("") + 
@@ -332,7 +333,6 @@ P_waist <- data_waist_plot %>% ggplot(aes(x=maintaxa, y=est, ymin=ci_low, ymax=c
   ggtitle("") + 
   # coord_cartesian(ylim = c(-5, 30))+ 
   coord_flip() + theme_minimal() + 
-  geom_hline(yintercept = 0, color = "grey80")+
   theme(#axis.text.y = element_text(size= 6.5),
         axis.text.x = element_text(size = 6.5),
         axis.title.x = element_text(size = 9),
@@ -380,7 +380,7 @@ p_waist_hp <- grid.grabExpr(draw(ComplexHeatmap::pheatmap(-log10(data_waist_hp),
                                                           number_color = "black", 
                                                           border_color = NA,
                                                           fontsize_col = 9.3,
-                                                          fontsize = 8.2,
+                                                          fontsize = 8.3,
                                                           legend = FALSE,
                                                           col =clrs, 
                                                           breaks = breaks1)))
@@ -412,6 +412,7 @@ data_whr_plot$label <- factor(data_whr_plot$label, levels=data_whr_plot$label)
 
 
 P_whr <- data_whr_plot %>% ggplot(aes(x=label, y=est, ymin=ci_low, ymax=ci_high)) +
+  geom_hline(yintercept = 0, color = "grey80")+
   geom_pointrange(size=0.1,aes(color=phenotype), shape = 20) + 
   scale_color_manual(values = 'orange', labels = 'WHRadjBMI') + scale_x_discrete(limits=rev)+
   xlab("") + 
@@ -419,7 +420,7 @@ P_whr <- data_whr_plot %>% ggplot(aes(x=label, y=est, ymin=ci_low, ymax=ci_high)
   ggtitle("") + 
   # coord_cartesian(ylim = c(-5, 30))+ 
   coord_flip() + theme_minimal() + 
-  geom_hline(yintercept = 0, color = "grey80")+#scale_y_reverse() +
+  #scale_y_reverse() +
   theme(#axis.text.y = element_text(size= 6.5),
     axis.text.x = element_text(size = 6.5),
     axis.title.x = element_text(size = 9),
@@ -470,7 +471,7 @@ p_whr_hp <- grid.grabExpr(draw(ComplexHeatmap::pheatmap(-log10(data_whr_hp),
                                                         angle_col = c("0"), 
                                                         number_color = "black", 
                                                         fontsize_col = 9.3,
-                                                        fontsize = 8.2,
+                                                        fontsize = 8.3,
                                                         border_color = NA,
                                                         col =clrs, 
                                                         breaks = breaks1)))
@@ -497,7 +498,7 @@ all_plots <- grid.arrange( P_bmi,p_bmi_hp,P_waist, p_waist_hp, P_whr,
                            p_whr_hp,rect_whr, rect_waist, rect_bmi, widths =
                              c(3.5,1,2,1,2,1,0.5,0.5,0.5))
 
-ggsave('/Users/ma8244mi/Desktop/BMI-paper/plots/Top100MGS_heatmap.pdf', all_plots, width = 50,height = 30, units = 'cm')
+ggsave('/Users/ma8244mi/Desktop/BMI-paper/plots/Top100MGS_heatmap.tiff', all_plots, width = 45,height = 30, units = 'cm')
 
 ```
 

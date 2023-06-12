@@ -1,0 +1,204 @@
+---
+title: "ko_abundance_data_prep_for_reg"
+output: html_document
+description: here I prepared the KO data variables from '/Volumes/research/metabogut/BMI_2021/Louise_intermediate/data_log_filt5_n12028_update220608.RData' which is a datafile that contains 12028 samples of lungut and upgut (filtered data 5%) and all variables needed.
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '/Volumes/research/metabogut/BMI_2021')
+```
+
+
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(vegan)
+library(RColorBrewer)
+library(matrixStats)
+```
+
+### read KO relative abundance files 
+```{r}
+KO_lungut <- read.table(gzfile("data/processed/CM_output/lungut/lungut03.koComp.percent.tsv.gz"),quote = "", sep = "\t", header = TRUE)
+KO_upgut <- read.table(gzfile("data/processed/CM_output/upgut/upugut03.koComp.percent.tsv.gz"),quote = "", sep = "\t", header = TRUE)
+
+#remove description column
+KO_lungut <-  subset(KO_lungut, select = -c(Description))
+KO_upgut <-  subset(KO_upgut, select = -c(Description))
+```
+
+```{r}
+#merge but keep the unmatched
+lun_up_KO <- merge(KO_lungut,KO_upgut,by="KO", all = TRUE)
+```
+
+### Sanity check
+```{r}
+diff_ids_KO_lun= setdiff(colnames(lun_up_KO[-1]), colnames(KO_lungut[-1]))
+length(diff_ids_KO_lun);
+
+diff_ids_KO_up= setdiff(colnames(lun_up_KO[-1]), colnames(KO_upgut[-1]))
+length(diff_ids_KO_up)
+```
+
+
+```{r}
+#remove _b, b,and c from column names. These were probably sequenced from second attempt
+names(lun_up_KO) <- gsub("_b", "", names(lun_up_KO))
+names(lun_up_KO) <- gsub("b", "", names(lun_up_KO))
+names(lun_up_KO) <- gsub("c", "", names(lun_up_KO))
+#lun_up_KO[1:10,1:10]
+```
+
+#### Sanity check
+```{r}
+#check if _b is still present in column names
+grep('_b',names(lun_up_KO)) 
+#or
+grep('lungut_2_2309_b',names(lun_up_KO)) 
+```
+#### Inspect the files
+```{r}
+#how many KOs in upgut not lungut
+length(setdiff(KO_upgut$KO, KO_lungut$KO)) #61
+#how many KOs in lungut not in upgut
+length(setdiff(KO_lungut$KO, KO_upgut$KO))#245
+#test if KOs in upgut not in lungut are present in less than ~30% of the samples (because then we can impute with 0 when preparaing GMMs)
+ko_in_up_not_lun <- KO_upgut[!(KO_upgut$KO %in% KO_lungut$KO),]
+ko_keep <- rowSums(ko_in_up_not_lun > 0) > (0.023*ncol(ko_in_up_not_lun))
+ko_in_up_not_lun_filt <- ko_in_up_not_lun[,ko_keep] # 0 samples, so these 61 KOs are present in less than 2.3% of the samples
+
+
+#test if KOs in lungut not in upgut are present in less than 30% of the samples
+ko_in_lun_not_up <- KO_lungut[!(KO_lungut$KO %in% KO_upgut$KO),]
+ko_keep <- rowSums(ko_in_lun_not_up > 0) > (0.002*ncol(ko_in_lun_not_up)) # 0 samples, the 245 KOs are present in less than 0.2% of the samples
+ko_in_lun_not_up_filt <- ko_in_lun_not_up[,ko_keep]
+
+        
+###### impute these KOs with 0 when running GMMs ############
+```
+
+
+
+#### match with samples from MGS data and take necessary variables
+This MGS data was created by Louise and is already filtered (5%)
+```{r}
+load("Louise_intermediate/data_log_filt5_n12028_update220608_221104.RData")
+
+
+lunup <- data_log %>%
+    transmute(sample_ID = `Data sample code`, male = sex == 1,
+              country_birth = country_birth,Cohort = Cohort, plate = plate, age = age,
+              physical_activity = physical_activity,
+              physical_activity_f = factor(physical_activity), height = height, 
+              metformin = metformin, PPI = PPI, antibiotics = antibiotics, 
+              Fiber = Fiber, shannon = shannon, 
+              waist = waist, WHR = WH_rat, WHR = WH_rat, BMI = BMI, BMI_3 = BMI_3, BMI_4 = BMI_4) %>%
+                as.data.frame()
+
+lunup$sample_ID <- gsub("_b", "", lunup$sample_ID)
+lunup$sample_ID <- gsub("b", "", lunup$sample_ID)
+lunup$sample_ID <- gsub("c", "", lunup$sample_ID)
+```
+
+
+#### Sanity check
+Do all pheno IDs match all KO IDs?
+```{r}
+
+length(lunup$sample_ID);
+length(colnames(lun_up_KO)[-1]);
+
+lungut_ids <- lunup$sample_ID[grep('lungut', lunup$sample_ID)]
+
+all(lungut_ids %in% colnames(lun_up_KO)[-1]); #TRUE
+
+upgut_ids <- lunup$sample_ID[grep('upugut', lunup$sample_ID)]
+all(upgut_ids %in% colnames(lun_up_KO)[-1]) #TRUE
+```
+
+Take the whole dataset to match KO sample Ids with lunup sample Ids
+
+```{r}
+koIDs = colnames(lun_up_KO[-1])
+ko <- lun_up_KO[,c('KO', intersect(koIDs, lunup$sample_ID))]
+
+all(colnames(ko)[-1] %in% lunup$sample_ID) #TRUE
+
+```
+
+
+
+```{r}
+### I will replace NAs with zeros before doing rowSums and colSums. 
+
+ko[is.na(ko)] <- 0
+ko[][-1] <- lapply(ko[-1], as.numeric)
+
+ko_names <- ko$KO
+ko_transpose <- as.data.frame(t(ko))
+ko_transpose <- ko_transpose[-1,] 
+ko_transpose[] <- lapply(ko_transpose, as.numeric)
+colnames(ko_transpose) <- ko_names
+
+data_ko <- merge(lunup, ko_transpose , by.x = 'sample_ID', by.y = 'row.names', all = TRUE)
+#re-oder the sample_ID variable in data_ko as in lunup (which is same order as in data_log)
+data_ko <- data_ko[order(match(data_ko[,1],lunup[,1])),]
+#reset rownames
+rownames(data_ko) <- NULL
+
+```
+
+
+```{r}
+
+############### plot the percentage distribution of non zero KOs
+#take all KOs
+st_ko <- which(colnames(data_ko) == 'BMI_4')+1
+x <- data_ko[st_ko:ncol(data_ko)]
+data_ko.sum <- colSums(as.matrix(x) != 0) / nrow(as.matrix(x)) * 100
+
+#distribution of rowSums (KO abundance across the samples)
+hist(data_ko.sum, breaks = 100000, ylim = c(0,100), xlim = c(0, 100),
+     main = "Percentage of non zero data",
+     xlab = "Percentage of non zero data")
+abline(v=1, lty=3, col='red', lwd = 2)
+abline(v=5, lty=3, col='blue', lwd = 2)
+
+#dev.off()
+
+
+# based on the plot above, filter 1% of KOs
+
+#if x values of a KO,that are greater than zero, are present in more than 1% of num(individuals), keep the KO
+ko_keep <- colSums(x > 0) > (0.01*nrow(x))
+x <- x[,ko_keep]
+
+#plot the filtered data
+ko_data.sum.filt <- colSums(as.matrix(x) != 0) / nrow(as.matrix(x)) * 100
+
+hist(ko_data.sum.filt, breaks = 100000, ylim = c(0,100), xlim = c(0, 100),
+     main = "Percentage of non zero data filtered 1%",
+     xlab = "Percentage of non zero data")
+abline(v=1, lty=3, col='red', lwd = 2)
+abline(v=5, lty=3, col='blue', lwd = 2)
+
+```
+
+### Join phenotype and filtered data 1%
+```{r}
+data_ko <- cbind(data_ko[1:(st_ko-1)], x)
+```
+
+
+```{r}
+rm(lunup,ko, ko_transpose, KO_lungut, KO_upgut,lun_up_KO, data_log, 
+   diff_ids_KO_lun, diff_ids_KO_up, koIDs, ko_names, lungut_ids, upgut_ids)
+
+save.image(file ="enrichment_analysis/new_analysis_2208/data_preparation/data_ko.RData")
+```
+
+
+
+

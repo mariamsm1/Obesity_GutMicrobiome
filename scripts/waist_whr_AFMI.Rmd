@@ -125,7 +125,7 @@ merge_all_with_sig_subset <- merge_all_with_sig_subset %>%
 ```
 
 ### re-structure the data to plot in the heatmap
-```{r chunk created by Mariam 10 feb 2023}
+```{r}
 transform_to_table <- merge_all_with_sig_subset %>% spread(phenotype, p_fdr_per_outcome)
 
 transform_to_table<- transform_to_table %>%
@@ -319,7 +319,7 @@ merge_all_with_sig_subset <- merge_all_with_sig_subset %>%
 ```
 
 ### re-structure the data to plot in the heatmap
-```{r chunk created by Mariam 10 feb 2023}
+```{r}
 transform_to_table <- merge_all_with_sig_subset %>% spread(phenotype, p_fdr_per_outcome)
 
 transform_to_table<- transform_to_table %>%

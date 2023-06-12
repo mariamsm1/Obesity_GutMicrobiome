@@ -1,0 +1,104 @@
+### Mariam Miari
+### Dec 20, 2021, edited Sept 4, 2022
+### for the microbiome BMI paper
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '/Volumes/research/metabogut/BMI_2021')
+```
+
+###### GMM data preparation from KO counts
+```{r}
+library(omixerRpm)
+# read a functional profile matrix into R or create it inside R. Please note that row.names should not be used while reading the matrix. 
+#dat <- read.table("/Users/ma8244mi/omixer-rpmR/test/matrix.tsv", header=T, sep="\t")
+KO_lungut <- read.table("data/processed/CM_output/lungut/2020-12-21_lungut_additional_tables_2/lungut03.koCounts.tsv",quote = "", sep = "\t", header = TRUE)
+KO_upgut <- read.table("data/processed/CM_output/lungut/2020-12-21_lungut_additional_tables_2/upugut03.koCounts.tsv",quote = "", sep = "\t", header = TRUE)
+
+#remove description column
+KO_lungut <-  subset(KO_lungut, select = -c(Description))
+KO_upgut <-  subset(KO_upgut, select = -c(Description))
+```
+
+
+```{r}
+#merge but keep the unmatched
+lun_up_KO <- merge(KO_lungut,KO_upgut,by="KO", all = TRUE)
+
+#remove _b, b,and c from column names. These were probably sequenced from second attempt
+names(lun_up_KO) <- gsub("_b", "", names(lun_up_KO))
+names(lun_up_KO) <- gsub("b", "", names(lun_up_KO))
+names(lun_up_KO) <- gsub("c", "", names(lun_up_KO))
+```
+
+
+```{r}
+
+#load data with variables, created by Louise
+load("Louise_intermediate/data_log_filt5_n12028_update220608.RData")
+
+
+lunup <- data_log %>%
+  transmute(sample_ID = sample, male = sex == 1,
+            country_birth = country_birth,Cohort = Cohort, plate = plate, age = age,
+            physical_activity = physical_activity,
+            physical_activity_f = factor(physical_activity), height = height, 
+            metformin = metformin, PPI = PPI, antibiotics = antibiotics, 
+            Fiber = Fiber, shannon = shannon, 
+            waist = waist, WH_rat = WH_rat, WHR = WH_rat, BMI = BMI, BMI_3 = BMI_3, BMI_4 = BMI_4) %>%
+  as.data.frame()
+```
+
+
+```{r}
+lunup$sample_ID <- gsub("_b", "", lunup$sample_ID)
+lunup$sample_ID <- gsub("b", "", lunup$sample_ID)
+lunup$sample_ID <- gsub("c", "", lunup$sample_ID)
+
+length(lunup$sample_ID);
+length(colnames(lun_up_KO)[-1]);
+
+lungut_ids <- lunup$sample_ID[grep('lungut', lunup$sample_ID)]
+
+all(lungut_ids %in% colnames(lun_up_KO)[-1]); #TRUE
+
+upgut_ids <- lunup$sample_ID[grep('upugut', lunup$sample_ID)]
+all(upgut_ids %in% colnames(lun_up_KO)[-1]) #TRUE
+
+koIDs = colnames(lun_up_KO[-1])
+ko <- lun_up_KO[,c('KO', intersect(koIDs, lunup$sample_ID))]
+
+#all(colnames(ko)[-1] %in% lunup$sample_ID) #TRUE
+
+
+
+# read a functional profile matrix into R or create it inside R. Please note that row.names should not be used while reading the matrix. 
+
+#replace Nas with 0s
+ko[is.na(ko)] <- 0
+```
+
+### RUN OmixerRPM
+
+```{r}
+# Run the module mapping on the loaded table.
+mods <- rpm(ko, minimum.coverage=0.3, annotation = 1,score.estimator="median")
+
+# alternatively run the mapping without loading the table into R.
+#mods <- rpm("matrix.tsv", minimum.coverage=0.3, annotation = 1)
+
+# Load the default mapping database
+db <- loadDefaultDB()
+# get the name of the first predicted module
+getNames(db, mods@annotation[1,])
+
+# get the abundance|coverage as a data.frame with module id and description
+abundance <- asDataFrame(mods, "abundance")
+
+```
+
+
+```{r}
+write.csv(abundance,"abundance.csv", row.names = FALSE)
+```
+
+
