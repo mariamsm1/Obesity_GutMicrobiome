@@ -1,0 +1,189 @@
+---
+title: "Microbiome BMI analyses - regression models"
+subtitle: "Main analysis and three sensitivity analyses"
+author: "Marlena Maziarz"
+date: "`r format(Sys.Date(), '%B %e, %Y')`"
+output:
+  bookdown::html_document2:
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+    fig_caption: yes
+  bookdown::pdf_document2:
+    toc: yes
+    toc_depth: 5
+    fig_caption: yes
+  bookdown::word_document2:
+    toc: yes
+    toc_depth: 5
+    fig_caption: yes
+always_allow_html: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+# The main analysis
+
+## Setup
+Load the data, source the helper functions etc. The dataset was prepared by Mariam, filtered at 5% and clr-transformed, n = 9993 where I used unrelated individuals (UNRELATED_1_DEGREE) 
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(rio)
+library(here)
+library(robustbase)
+library(readxl)
+
+results_version <- '241223'
+##################################################################################################################################
+# Source the helper functions
+source(here::here('bmi_paper_model_fitting_helper_functions_241223.R')) # NOTE THE VERSION, make sure it's the right one!
+##################################################################################################################################
+
+
+
+# reads 'data' 
+load("/Volumes/research/metabogut/BMI_2021/analysisv3.0/regression/gmm/data_gmm_CLRtrans.RData")
+
+# Since the regression model does not accept spaces in the variables names being regressed I will take the gmm ID only and run the regression model with it
+
+matching_columns <- grepl("MF", colnames(data_gmm))
+
+# Replace everything before "hgmm" with an empty string
+colnames(data_gmm)[matching_columns] <- sub(".*MF", "MF", colnames(data_gmm)[matching_columns])
+
+
+data <- data_gmm
+#factor physical_activity
+data <- data %>%
+  mutate(physical_activity_f = factor(physical_activity)) %>%
+  relocate(physical_activity_f, .after = physical_activity)
+
+#factor smoking
+data <- data %>%
+  mutate(smoking_f = factor(smoking)) %>%
+  relocate(smoking_f, .after = smoking)
+
+data <- data %>% 
+  mutate(male = sex == 1)
+```
+
+
+
+```{r}
+model_names <- c('M1_BMI',
+                 'stratM1_BMI_females',
+                 'stratM1_BMI_males',
+                 'intM1_BMI')
+
+# covariates for each of the base models
+base_model_covariates_in_all_models <- c('age', 'country_birth', 'Cohort')
+
+base_model_covariates <- list(
+  M1_BMI                       = c(base_model_covariates_in_all_models, 'male'),
+  stratM1_BMI_females          = c(base_model_covariates_in_all_models),
+  stratM1_BMI_males            = c(base_model_covariates_in_all_models),
+  intM1_BMI                    = c(base_model_covariates_in_all_models, 'male'))
+
+# covariates for each of the fully adjusted models
+full_model_covariates_in_all_models <- c('age', 'country_birth', 'Cohort', 'physical_activity_f', 'smoking_f', 'metformin', 'diab_diag', 'Fiber')
+
+full_model_covariates <- list(
+  M1_BMI                       = c(full_model_covariates_in_all_models, 'male'),
+  stratM1_BMI_females          = c(full_model_covariates_in_all_models),
+  stratM1_BMI_males            = c(full_model_covariates_in_all_models),
+  intM1_BMI                    = c(full_model_covariates_in_all_models, 'male'))
+
+model_outcome <- list(
+  M1_BMI                       = 'BMI',
+  stratM1_BMI_females          = 'BMI',
+  stratM1_BMI_males            = 'BMI',
+  intM1_BMI                    = 'BMI')
+
+model_with_interaction <- list(
+  M1_BMI                       = F,
+  stratM1_BMI_females          = F,
+  stratM1_BMI_males            = F,
+  intM1_BMI                    = T)
+
+model_strata <- list(
+  M1_BMI                       = 'all',
+  stratM1_BMI_females          = 'females',
+  stratM1_BMI_males            = 'males',
+  intM1_BMI                    = 'all')
+```
+
+
+## Model fitting
+
+In this part we use all the data, ie. data from the three cohorts and adjust for cohort.
+
+```{r}
+all_results_main <- NULL
+
+for(curr_model in model_names){
+    
+    curr_results <- get_results_for_bmi_paper(d = data,
+                                              outcome = model_outcome[[curr_model]], 
+                                              model_name = curr_model,
+                                              model_strata = model_strata[[curr_model]],
+                                              suppress_printing = F,
+                                              base_model_vars_to_adjust_for = base_model_covariates[[curr_model]],
+                                              full_model_vars_to_adjust_for = full_model_covariates[[curr_model]],
+                                              glm_family = 'gaussian', # with glmrob() method = "Mqle" is added
+                                              gmm_sex_interaction = model_with_interaction[[curr_model]],
+                                              sex_var = 'male')
+    
+    export(curr_results, file = here::here('results', 'main_analyses', paste0(curr_model, '_results_', results_version, '.xlsx')))
+    all_results_main <- bind_rows(all_results_main, curr_results)
+    
+    rm(curr_results)
+}
+
+all_results_main <- all_results_main %>%
+    mutate(analysis = 'main',
+           cohort = 'all_cohorts') 
+
+```
+
+```{r}
+all_results_main$analysis <- ifelse(grepl("base_M1_BMI|full_M1_BMI", all_results_main$model_name), "all", 
+                                    ifelse(grepl("base_stratM1_BMI_females|full_stratM1_BMI_females|base_stratM1_BMI_males|full_stratM1_BMI_males",
+                                                 all_results_main$model_name), "sex_stratification",
+                                           "interaction"))
+```
+
+# FDR correction
+## for interaction, do the FDR adjustment per interaction effect
+```{r}
+interaction_df <- all_results_main %>%
+    filter(grepl("int", model_name) & grepl(":maleTRUE", gmm))
+
+interaction_df$p_value_adj <- p.adjust(interaction_df$p, method = "fdr") # correct interaction results alone (int effect only)
+
+interaction_df$outcome <- "BMI"
+interaction_df <- interaction_df[,c("analysis", "outcome","cohort","model_name","gmm","n_obs","est","se","ci_low","ci_high",
+                      "p", "p_value_adj")]
+
+rest_df <- all_results_main %>%
+  filter(!grepl("int", model_name))
+
+results <- rest_df %>%
+  group_by(analysis) %>%
+  mutate(p_value_adj = p.adjust(p, method = "fdr")) %>%
+  ungroup()
+
+results$outcome <- "BMI"
+results <- results[,c("analysis", "outcome","cohort","model_name","gmm","n_obs","est","se","ci_low","ci_high",
+                      "p", "p_value_adj")]
+
+all_results <- rbind(interaction_df, results)
+
+```
+
+## save
+```{r}
+export(all_results, "/Volumes/research/metabogut/BMI_2021/analysisv3.0/regression/gmm/gmm_as_exposure/results/results_241223.xlsx")
+```
+
