@@ -3,7 +3,7 @@
 
 
 # Project overview
-In this project, we studied the connection between BMI and gut metagenome in 3 large population cohorts (N = 9,993): The Swedish CArdioPulmonary bioImage 
+In this project, we studied the connection between BMI and gut metagenome in 3 large population cohorts (n = 9,993): The Swedish CArdioPulmonary bioImage 
 Study (SCAPIS Malmö and SCAPIS Uppsala) and Malmö Offspring Study (MOS).
 
 # Illustrated table of content
