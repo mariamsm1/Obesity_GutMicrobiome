@@ -3,7 +3,7 @@ title: "MR_analysis"
 output: html_document
 date: "2024-10-14"
 author: "Mariam Miari & Gabriel Baldanzi"
-description: Two-Sample MR for diversity metrics, species, and GMMs
+description: Two-Sample MR for diversity metrics, species, and GMMs using MendelianRandomisation and TwoSampleMR packages
 ---
 
 ```{r setup, include=FALSE}
