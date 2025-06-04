@@ -1,0 +1,951 @@
+---
+title: "MR_analysis"
+output: html_document
+date: "2024-10-14"
+author: "Mariam Miari & Gabriel Baldanzi"
+description: Two-Sample MR for diversity metrics, species, and GMMs
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list = ls())
+library(rio)
+library(tidyverse)
+library(TwoSampleMR)
+library(MendelianRandomization)
+library(readxl)
+library(DT)
+library(here)
+```
+
+# Shannon index (shannon_nds)
+```{r}
+# shannon_nds summary stats
+outcome_stat <- read.table(here::here("../output_assoc/diversity/lin_reg_sh.shannon_nds.glm.linear"), sep = "\t", header = T)
+exposure_stat <- read_excel(here::here("../../PRS_dataprep/bmi_snps_checked_545.xlsx"))
+```
+
+```{r}
+#keep TEST = ADD
+outcome_stat <- outcome_stat[outcome_stat$TEST == "ADD",]
+outcome_stat <- outcome_stat[order(outcome_stat$ID),]
+
+
+exposure_stat <- exposure_stat[order(exposure_stat$SNP),]
+
+
+all(outcome_stat$ID %in% exposure_stat$SNP)
+```
+
+# harmonize data, exp = BMI, outcome = shannon
+```{r}
+exposure_dat <- exposure_stat %>% transmute(SNP = SNP,
+                                             beta.exposure = beta.combined,
+                                             se.exposure = se.combined,
+                                             effect_allele.exposure = EA,
+                                             other_allele.exposure = NEA,
+                                             eaf.exposure = frqA1.combined,
+                                             exposure = "BMI",
+                                             id.exposure = "BMI_cont")
+
+
+outcome_dat <- outcome_stat %>% transmute(SNP = ID,
+                                           beta.outcome = BETA,
+                                           se.outcome = SE,
+                                           effect_allele.outcome = A1,
+                                           other_allele.outcome = OMITTED,
+                                           eaf.outcome = A1_FREQ,
+                                          outcome = "shannon_nds",
+                                          id.outcome = "shannon_nds")
+
+row.names(outcome_dat) <- NULL
+```
+
+```{r}
+harmonized_dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+```
+# MR
+
+## single snp effect
+the mr_singlesnp() function calculates the full MR using all available SNPs as well, and by default it uses the IVW and MR Egger methods
+```{r}
+single_snp_effect <- mr_singlesnp(harmonized_dat)
+export(single_snp_effect, here::here("../MRresults/diversity/single_snpEffect_sh_nds.xlsx"))
+```
+
+## leave-one-out analysis 
+1. uses IVW by default (Combines the effects of multiple SNPs, giving more weight to SNPs with less variability (i.e., more precise estimates)
+2. this method enables the assessment of whether or not any causal effect estimate is being driven by one SNP independently of all other SNPs being used as IVs by comparing the original causal effect estimate (i.e., with all SNPs included in the model) to estimates where each SNP has been removed
+```{r}
+res_loo <- mr_leaveoneout(harmonized_dat) # significant, meaning that removing that particular snp does not change the results
+export(res_loo, here::here("../MRresults/diversity/loo_analysis_sh_nds.xlsx"))
+```
+
+## methods
+```{r}
+mr_bmi_shannon_nds <- mr_input(bx = harmonized_dat$beta.exposure, 
+                               bxse = harmonized_dat$se.exposure,
+                               by = harmonized_dat$beta.outcome, 
+                               byse = harmonized_dat$se.outcome,
+                               exposure = "BMI", outcome = "shannon_nds",
+                               snps = harmonized_dat$SNP,
+                               effect_allele = harmonized_dat$effect_allele.outcome,
+                               other_allele = harmonized_dat$other_allele.outcome)
+
+ivw <- mr_ivw(mr_bmi_shannon_nds)
+
+ivw.df <- data.frame(model = "IVW", beta = ivw@Estimate, se = ivw@StdError, lci = ivw@CILower, hci = ivw@CIUpper, p = ivw@Pvalue, nsnps = ivw@SNPs, hetero_est = ivw@Heter.Stat[1], hetero_p =  ivw@Heter.Stat[2])
+
+median <- mr_median(mr_bmi_shannon_nds, weighting = "weighted", iterations = 10000)
+median.df <- data.frame(model = "Median-weighted", beta = median@Estimate, se = median@StdError, lci = median@CILower, hci = median@CIUpper, p = median@Pvalue, nsnps = median@SNPs, hetero_est = NA, hetero_p = NA)
+
+egger <- mr_egger(mr_bmi_shannon_nds)
+egger.df <- data.frame(model = "Egger", beta = egger@Estimate, se = egger@StdError.Est, lci = egger@CILower.Est, hci = egger@CIUpper.Est, p = egger@Pvalue.Est, nsnps = egger@SNPs, hetero_est = egger@Heter.Stat[1], hetero_p =  egger@Heter.Stat[2])
+egger.int <- data.frame(model = "Egger-intercept", beta = egger@Intercept, se = NA, lci = NA, hci = NA, p = egger@Pvalue.Int, nsnps = NA, hetero_est = NA, hetero_p =  NA)
+
+temp <- data.frame(rbind(ivw.df, median.df, egger.df, egger.int))
+temp[,c("beta","se","lci","hci")] <- temp[,c("beta","se","lci","hci")]
+temp$p = temp$p
+temp$hetero_est = temp$hetero_est
+temp$hetero_p = temp$hetero_p
+datatable(temp,rownames = F, filter = "top", caption = "BMI and Shannon_nds")
+```
+# MR all
+```{r}
+res <- mr(harmonized_dat)
+
+export(res,here::here("../MRresults/diversity/results_shannon_nds_MR.xlsx"))
+```
+
+
+
+
+```{r}
+p1 <- mr_scatter_plot(res, harmonized_dat)
+p1
+```
+
+```{r}
+p2 <- mr_forest_plot(single_snp_effect)
+p2[[1]]
+```
+
+# Shannon index (shannon_ds)
+```{r}
+# shannon_nds summary stats
+outcome_stat <- read.table(here::here("../output_assoc/diversity/lin_reg_shannon_ds.shannon_ds.glm.linear"), sep = "\t", header = T)
+exposure_stat <- read_excel(here::here("../../PRS_dataprep/bmi_snps_checked_545.xlsx"))
+
+```
+
+```{r}
+#keep TEST = ADD
+outcome_stat <- outcome_stat[outcome_stat$TEST == "ADD",]
+outcome_stat <- outcome_stat[order(outcome_stat$ID),]
+
+
+exposure_stat <- exposure_stat[order(exposure_stat$SNP),]
+
+
+all(outcome_stat$ID %in% exposure_stat$SNP)
+```
+
+# harmonize data, exp = BMI, outcome = shannon
+```{r}
+exposure_dat <- exposure_stat %>% transmute(SNP = SNP,
+                                             beta.exposure = beta.combined,
+                                             se.exposure = se.combined,
+                                             effect_allele.exposure = EA,
+                                             other_allele.exposure = NEA,
+                                             eaf.exposure = frqA1.combined,
+                                             exposure = "BMI",
+                                             id.exposure = "BMI_cont")
+
+
+outcome_dat <- outcome_stat %>% transmute(SNP = ID,
+                                           beta.outcome = BETA,
+                                           se.outcome = SE,
+                                           effect_allele.outcome = A1,
+                                           other_allele.outcome = OMITTED,
+                                           eaf.outcome = A1_FREQ,
+                                          outcome = "shannon_ds",
+                                          id.outcome = "shannon_ds")
+
+row.names(outcome_dat) <- NULL
+```
+
+```{r}
+harmonized_dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+```
+# MR
+
+## single snp effect
+```{r}
+single_snp_effect <- mr_singlesnp(harmonized_dat)
+export(single_snp_effect, here::here("../MRresults/diversity/single_snpEffect_sh_ds.xlsx"))
+```
+
+## leave-one-out analysis 
+```{r}
+res_loo <- mr_leaveoneout(harmonized_dat) # significant, meaning that removing that particular snp does not change the results
+export(res_loo, here::here("../MRresults/diversity/loo_analysis_sh_ds.xlsx"))
+```
+
+## methods
+```{r}
+mr_bmi_shannon_ds <- mr_input(bx = harmonized_dat$beta.exposure, 
+                               bxse = harmonized_dat$se.exposure,
+                               by = harmonized_dat$beta.outcome, 
+                               byse = harmonized_dat$se.outcome,
+                               exposure = "BMI", outcome = "shannon_ds",
+                               snps = harmonized_dat$SNP,
+                               effect_allele = harmonized_dat$effect_allele.outcome,
+                               other_allele = harmonized_dat$other_allele.outcome)
+
+ivw <- mr_ivw(mr_bmi_shannon_ds)
+
+ivw.df <- data.frame(model = "IVW", beta = ivw@Estimate, se = ivw@StdError, lci = ivw@CILower, hci = ivw@CIUpper, p = ivw@Pvalue, nsnps = ivw@SNPs, hetero_est = ivw@Heter.Stat[1], hetero_p =  ivw@Heter.Stat[2])
+
+median <- mr_median(mr_bmi_shannon_ds, weighting = "weighted", iterations = 10000)
+median.df <- data.frame(model = "Median-weighted", beta = median@Estimate, se = median@StdError, lci = median@CILower, hci = median@CIUpper, p = median@Pvalue, nsnps = median@SNPs, hetero_est = NA, hetero_p = NA)
+
+egger <- mr_egger(mr_bmi_shannon_ds)
+egger.df <- data.frame(model = "Egger", beta = egger@Estimate, se = egger@StdError.Est, lci = egger@CILower.Est, hci = egger@CIUpper.Est, p = egger@Pvalue.Est, nsnps = egger@SNPs, hetero_est = egger@Heter.Stat[1], hetero_p =  egger@Heter.Stat[2])
+egger.int <- data.frame(model = "Egger-intercept", beta = egger@Intercept, se = NA, lci = NA, hci = NA, p = egger@Pvalue.Int, nsnps = NA, hetero_est = NA, hetero_p =  NA)
+
+temp <- data.frame(rbind(ivw.df, median.df, egger.df, egger.int))
+temp[,c("beta","se","lci","hci")] <- temp[,c("beta","se","lci","hci")]
+temp$p = temp$p
+temp$hetero_est = temp$hetero_est
+temp$hetero_p = temp$hetero_p
+datatable(temp,rownames = F, filter = "top", caption = "BMI and Shannon_ds")
+```
+#save
+```{r}
+export(temp,here::here("../MRresults/diversity/res_shannon_ds_temp.xlsx"))
+```
+
+# MR all
+```{r}
+res <- mr(harmonized_dat)
+
+export(res,here::here("../MRresults/diversity/results_shannon_ds_MR.xlsx"))
+```
+
+# Richness
+```{r}
+# richness summary stats
+outcome_stat <- read.table(here::here("../output_assoc/diversity/lin_reg_rich.richness.glm.linear"), sep = "\t", header = T)
+exposure_stat <- read_excel(here::here("../../PRS_dataprep/bmi_snps_checked_545.xlsx"))
+```
+
+```{r}
+#keep TEST = ADD
+outcome_stat <- outcome_stat[outcome_stat$TEST == "ADD",]
+outcome_stat <- outcome_stat[order(outcome_stat$ID),]
+
+
+exposure_stat <- exposure_stat[order(exposure_stat$SNP),]
+
+
+all(outcome_stat$ID %in% exposure_stat$SNP)
+```
+
+# harmonize data, exp = BMI, outcome = richness
+```{r}
+exposure_dat <- exposure_stat %>% transmute(SNP = SNP,
+                                             beta.exposure = beta.combined,
+                                             se.exposure = se.combined,
+                                             effect_allele.exposure = EA,
+                                             other_allele.exposure = NEA,
+                                             eaf.exposure = frqA1.combined,
+                                             exposure = "BMI",
+                                             id.exposure = "BMI_cont")
+
+
+outcome_dat <- outcome_stat %>% transmute(SNP = ID,
+                                           beta.outcome = BETA,
+                                           se.outcome = SE,
+                                           effect_allele.outcome = A1,
+                                           other_allele.outcome = OMITTED,
+                                           eaf.outcome = A1_FREQ,
+                                          outcome = "richness",
+                                          id.outcome = "richness")
+
+row.names(outcome_dat) <- NULL
+```
+
+```{r}
+harmonized_dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+```
+# MR
+## single snp effect
+```{r}
+single_snp_effect <- mr_singlesnp(harmonized_dat)
+export(single_snp_effect, here::here("../MRresults/diversity/single_snpEffect_rich.xlsx"))
+```
+
+## leave-one-out analysis 
+```{r}
+res_loo <- mr_leaveoneout(harmonized_dat) # significant, meaning that removing that particular snp does not change the results
+export(res_loo, here::here("../MRresults/loo_analysis_rich.xlsx"))
+```
+
+## methods
+```{r}
+mr_bmi_richness <- mr_input(bx = harmonized_dat$beta.exposure, 
+                               bxse = harmonized_dat$se.exposure,
+                               by = harmonized_dat$beta.outcome, 
+                               byse = harmonized_dat$se.outcome,
+                               exposure = "BMI", outcome = "richness",
+                               snps = harmonized_dat$SNP,
+                               effect_allele = harmonized_dat$effect_allele.outcome,
+                               other_allele = harmonized_dat$other_allele.outcome)
+
+ivw <- mr_ivw(mr_bmi_richness)
+
+ivw.df <- data.frame(model = "IVW", beta = ivw@Estimate, se = ivw@StdError, lci = ivw@CILower, hci = ivw@CIUpper, p = ivw@Pvalue, nsnps = ivw@SNPs, hetero_est = ivw@Heter.Stat[1], hetero_p =  ivw@Heter.Stat[2])
+
+median <- mr_median(mr_bmi_richness, weighting = "weighted", iterations = 10000)
+median.df <- data.frame(model = "Median-weighted", beta = median@Estimate, se = median@StdError, lci = median@CILower, hci = median@CIUpper, p = median@Pvalue, nsnps = median@SNPs, hetero_est = NA, hetero_p = NA)
+
+egger <- mr_egger(mr_bmi_richness)
+egger.df <- data.frame(model = "Egger", beta = egger@Estimate, se = egger@StdError.Est, lci = egger@CILower.Est, hci = egger@CIUpper.Est, p = egger@Pvalue.Est, nsnps = egger@SNPs, hetero_est = egger@Heter.Stat[1], hetero_p =  egger@Heter.Stat[2])
+egger.int <- data.frame(model = "Egger-intercept", beta = egger@Intercept, se = NA, lci = NA, hci = NA, p = egger@Pvalue.Int, nsnps = NA, hetero_est = NA, hetero_p =  NA)
+
+temp <- data.frame(rbind(ivw.df, median.df, egger.df, egger.int))
+temp[,c("beta","se","lci","hci")] <- temp[,c("beta","se","lci","hci")]
+temp$p = round(temp$p, 5)
+temp$hetero_est = temp$hetero_est
+temp$hetero_p = temp$hetero_p
+
+datatable(temp,rownames = F, filter = "top", caption = "BMI and richness")
+```
+
+# MR all
+```{r}
+res <- mr(harmonized_dat)
+
+export(res,here::here("../MRresults/diversity/results_richness_MR.xlsx"))
+```
+
+```{r}
+p1 <- mr_scatter_plot(res, harmonized_dat)
+p1
+```
+
+# richness_ds
+```{r}
+# richness summary stats
+outcome_stat <- read.table(here::here("../output_assoc/diversity/lin_reg_rich_ds.richness_ds.glm.linear"), sep = "\t", header = T)
+exposure_stat <- read_excel(here::here("../../PRS_dataprep/bmi_snps_checked_545.xlsx"))
+```
+
+```{r}
+#keep TEST = ADD
+outcome_stat <- outcome_stat[outcome_stat$TEST == "ADD",]
+outcome_stat <- outcome_stat[order(outcome_stat$ID),]
+
+
+exposure_stat <- exposure_stat[order(exposure_stat$SNP),]
+
+
+all(outcome_stat$ID %in% exposure_stat$SNP)
+```
+
+# harmonize data, exp = BMI, outcome = shannon
+```{r}
+exposure_dat <- exposure_stat %>% transmute(SNP = SNP,
+                                             beta.exposure = beta.combined,
+                                             se.exposure = se.combined,
+                                             effect_allele.exposure = EA,
+                                             other_allele.exposure = NEA,
+                                             eaf.exposure = frqA1.combined,
+                                             exposure = "BMI",
+                                             id.exposure = "BMI_cont")
+
+
+outcome_dat <- outcome_stat %>% transmute(SNP = ID,
+                                           beta.outcome = BETA,
+                                           se.outcome = SE,
+                                           effect_allele.outcome = A1,
+                                           other_allele.outcome = OMITTED,
+                                           eaf.outcome = A1_FREQ,
+                                          outcome = "richness_ds",
+                                          id.outcome = "richness_ds")
+
+row.names(outcome_dat) <- NULL
+```
+
+```{r}
+harmonized_dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+```
+# MR
+## single snp effect
+```{r}
+single_snp_effect <- mr_singlesnp(harmonized_dat)
+export(single_snp_effect, here::here("../MRresults/diversity/single_snpEffect_rich_ds.xlsx"))
+```
+
+## leave-one-out analysis 
+```{r}
+res_loo <- mr_leaveoneout(harmonized_dat) # significant, meaning that removing that particular snp does not change the results
+export(res_loo, here::here("../MRresults/loo_analysis_rich_ds.xlsx"))
+```
+
+## methods
+```{r}
+mr_bmi_richness_ds <- mr_input(bx = harmonized_dat$beta.exposure, 
+                               bxse = harmonized_dat$se.exposure,
+                               by = harmonized_dat$beta.outcome, 
+                               byse = harmonized_dat$se.outcome,
+                               exposure = "BMI", outcome = "richness_ds",
+                               snps = harmonized_dat$SNP,
+                               effect_allele = harmonized_dat$effect_allele.outcome,
+                               other_allele = harmonized_dat$other_allele.outcome)
+
+ivw <- mr_ivw(mr_bmi_richness_ds)
+
+ivw.df <- data.frame(model = "IVW", beta = ivw@Estimate, se = ivw@StdError, lci = ivw@CILower, hci = ivw@CIUpper, p = ivw@Pvalue, nsnps = ivw@SNPs, hetero_est = ivw@Heter.Stat[1], hetero_p =  ivw@Heter.Stat[2])
+
+median <- mr_median(mr_bmi_richness_ds, weighting = "weighted", iterations = 10000)
+median.df <- data.frame(model = "Median-weighted", beta = median@Estimate, se = median@StdError, lci = median@CILower, hci = median@CIUpper, p = median@Pvalue, nsnps = median@SNPs, hetero_est = NA, hetero_p = NA)
+
+egger <- mr_egger(mr_bmi_richness_ds)
+egger.df <- data.frame(model = "Egger", beta = egger@Estimate, se = egger@StdError.Est, lci = egger@CILower.Est, hci = egger@CIUpper.Est, p = egger@Pvalue.Est, nsnps = egger@SNPs, hetero_est = egger@Heter.Stat[1], hetero_p =  egger@Heter.Stat[2])
+egger.int <- data.frame(model = "Egger-intercept", beta = egger@Intercept, se = NA, lci = NA, hci = NA, p = egger@Pvalue.Int, nsnps = NA, hetero_est = NA, hetero_p =  NA)
+
+temp <- data.frame(rbind(ivw.df, median.df, egger.df, egger.int))
+temp[,c("beta","se","lci","hci")] <- temp[,c("beta","se","lci","hci")]
+temp$p = temp$p
+temp$hetero_est = temp$hetero_est
+temp$hetero_p = temp$hetero_p
+
+datatable(temp,rownames = F, filter = "top", caption = "BMI and richness_ds")
+```
+#save
+```{r}
+export(temp,here::here("../MRresults/diversity/res_richness_ds_temp.xlsx"))
+```
+
+# MR all
+```{r}
+res <- mr(harmonized_dat)
+
+export(res,here::here("../MRresults/diversity/results_richness_ds_MR.xlsx"))
+```
+
+# Inverse simpson
+```{r}
+# shannon_nds summary stats
+outcome_stat <- read.table(here::here("../output_assoc/diversity/lin_reg_invsimpson.inverse_simpson.glm.linear"), sep = "\t", header = T)
+exposure_stat <- read_excel(here::here("../../PRS_dataprep/bmi_snps_checked_545.xlsx"))
+```
+
+```{r}
+#keep TEST = ADD
+outcome_stat <- outcome_stat[outcome_stat$TEST == "ADD",]
+outcome_stat <- outcome_stat[order(outcome_stat$ID),]
+
+
+exposure_stat <- exposure_stat[order(exposure_stat$SNP),]
+
+
+all(outcome_stat$ID %in% exposure_stat$SNP)
+```
+
+# harmonize data, exp = BMI, outcome = shannon
+```{r}
+exposure_dat <- exposure_stat %>% transmute(SNP = SNP,
+                                             beta.exposure = beta.combined,
+                                             se.exposure = se.combined,
+                                             effect_allele.exposure = EA,
+                                             other_allele.exposure = NEA,
+                                             eaf.exposure = frqA1.combined,
+                                             exposure = "BMI",
+                                             id.exposure = "BMI_cont")
+
+
+outcome_dat <- outcome_stat %>% transmute(SNP = ID,
+                                           beta.outcome = BETA,
+                                           se.outcome = SE,
+                                           effect_allele.outcome = A1,
+                                           other_allele.outcome = OMITTED,
+                                           eaf.outcome = A1_FREQ,
+                                          outcome = "inverse_simpson",
+                                          id.outcome = "inverse_simpson")
+
+row.names(outcome_dat) <- NULL
+```
+
+```{r}
+harmonized_dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+```
+# MR
+
+<!-- ## single snp effect -->
+<!-- the mr_singlesnp() function calculates the full MR using all available SNPs as well, and by default it uses the IVW and MR Egger methods -->
+<!-- ```{r} -->
+<!-- single_snp_effect <- mr_singlesnp(harmonized_dat) -->
+<!-- export(single_snp_effect, here::here("../MRresults/diversity/single_snpEffect_sh_nds.xlsx")) -->
+<!-- ``` -->
+
+<!-- ## leave-one-out analysis  -->
+<!-- 1. uses IVW by default (Combines the effects of multiple SNPs, giving more weight to SNPs with less variability (i.e., more precise estimates) -->
+<!-- 2. this method enables the assessment of whether or not any causal effect estimate is being driven by one SNP independently of all other SNPs being used as IVs by comparing the original causal effect estimate (i.e., with all SNPs included in the model) to estimates where each SNP has been removed -->
+<!-- ```{r} -->
+<!-- res_loo <- mr_leaveoneout(harmonized_dat) # significant, meaning that removing that particular snp does not change the results -->
+<!-- export(res_loo, here::here("../MRresults/diversity/loo_analysis_sh_nds.xlsx")) -->
+<!-- ``` -->
+
+## methods
+```{r}
+mr_bmi_shannon_nds <- mr_input(bx = harmonized_dat$beta.exposure, 
+                               bxse = harmonized_dat$se.exposure,
+                               by = harmonized_dat$beta.outcome, 
+                               byse = harmonized_dat$se.outcome,
+                               exposure = "BMI", outcome = "inverse_simpson",
+                               snps = harmonized_dat$SNP,
+                               effect_allele = harmonized_dat$effect_allele.outcome,
+                               other_allele = harmonized_dat$other_allele.outcome)
+
+ivw <- mr_ivw(mr_bmi_shannon_nds)
+
+ivw.df <- data.frame(model = "IVW", beta = ivw@Estimate, se = ivw@StdError, lci = ivw@CILower, hci = ivw@CIUpper, p = ivw@Pvalue, nsnps = ivw@SNPs, hetero_est = ivw@Heter.Stat[1], hetero_p =  ivw@Heter.Stat[2])
+
+median <- mr_median(mr_bmi_shannon_nds, weighting = "weighted", iterations = 10000)
+median.df <- data.frame(model = "Median-weighted", beta = median@Estimate, se = median@StdError, lci = median@CILower, hci = median@CIUpper, p = median@Pvalue, nsnps = median@SNPs, hetero_est = NA, hetero_p = NA)
+
+egger <- mr_egger(mr_bmi_shannon_nds)
+egger.df <- data.frame(model = "Egger", beta = egger@Estimate, se = egger@StdError.Est, lci = egger@CILower.Est, hci = egger@CIUpper.Est, p = egger@Pvalue.Est, nsnps = egger@SNPs, hetero_est = egger@Heter.Stat[1], hetero_p =  egger@Heter.Stat[2])
+egger.int <- data.frame(model = "Egger-intercept", beta = egger@Intercept, se = NA, lci = NA, hci = NA, p = egger@Pvalue.Int, nsnps = NA, hetero_est = NA, hetero_p =  NA)
+
+temp <- data.frame(rbind(ivw.df, median.df, egger.df, egger.int))
+temp[,c("beta","se","lci","hci")] <- temp[,c("beta","se","lci","hci")]
+temp$p = temp$p
+temp$hetero_est = temp$hetero_est
+temp$hetero_p = temp$hetero_p
+datatable(temp,rownames = F, filter = "top", caption = "BMI and Inverse simpson")
+export(temp,here::here("../MRresults/diversity/results_inverse_simpson_temp.xlsx"))
+
+```
+
+
+# All species
+## remove hashtag from beginning of files, RUN FOR LOOP HERE ONLY ONCE
+```{r}
+taxonomy <- read.table("/Volumes/research/metabogut/Metagenomics_CM/CHAMP/original/files_from_CM/MGS/upuprf_r1v1_MGS_taxonomic_annotation.tsv", sep = "\t", header = T)
+taxonomy <- taxonomy %>% mutate(species = paste0(species, ".",MGS))
+taxonomy <- subset(taxonomy, select = c(MGS, species))
+
+
+dir_path <- "/Volumes/research/metabogut/BMI_2021/analysisv3.0/MR/output_assoc/species"
+file_list <- list.files(dir_path, pattern = "\\.linear$", full.names = TRUE) #files list
+
+for (file in file_list) {
+  lines <- readLines(file)
+  
+  #remove leading '#' from each line (if present)
+  lines_cleaned <- gsub("^#\\s*", "", lines)
+  writeLines(lines_cleaned, file)
+}
+```
+
+
+```{r}
+#keep TEST = ADD
+#read file list again
+file_list <- list.files(dir_path, pattern = "\\.linear$", full.names = TRUE)
+
+
+#extract outcome information
+outcome_list <- lapply(file_list, function(file_path) {
+  file <- read.table(file_path, header = TRUE, sep = "\t")  
+  
+  #TEST == "ADD"
+  outcome_stat <- file[file$TEST == "ADD",]
+  outcome_stat <- outcome_stat[order(outcome_stat$ID),]
+  
+  #extract outcome and id.outcome from the file name
+  file_name <- basename(file_path)  #extract file name from full path
+  parts <- strsplit(file_name, "[_.]")[[1]] 
+  outcome <- paste0(parts[[3]], ".", parts[[4]])
+  id_outcome <- paste0(parts[[3]], ".", parts[[4]])
+  
+  #create outcome_dat
+  outcome_dat <- outcome_stat %>%
+    transmute(SNP = ID,
+              beta.outcome = BETA,
+              se.outcome = SE,
+              effect_allele.outcome = A1,
+              other_allele.outcome = OMITTED,
+              eaf.outcome = A1_FREQ,
+              outcome = outcome,  
+              id.outcome = id_outcome)  
+  
+  return(outcome_dat)  
+})
+
+# Now outcome_list contains a list of data frames with the transformed data for each file
+
+exposure_dat <- exposure_stat %>% transmute(SNP = SNP,
+                                             beta.exposure = beta.combined,
+                                             se.exposure = se.combined,
+                                             effect_allele.exposure = EA,
+                                             other_allele.exposure = NEA,
+                                             eaf.exposure = frqA1.combined,
+                                             exposure = "BMI",
+                                             id.exposure = "BMI_cont")
+exposure_stat <- exposure_stat[order(exposure_stat$SNP),]
+
+```
+
+## harmonize
+```{r}
+harmonized_list <- list()
+
+for (i in seq_along(outcome_list)) {
+  harmonised_dat <- harmonise_data(exposure_dat, outcome_list[[i]], action = 2)
+  harmonized_list[[i]] <- harmonised_dat 
+}
+
+```
+
+# MR
+## species, using TwoSampleMR
+```{r}
+MR_res_list <- list()
+
+for (i in seq_along(harmonized_list)){
+  MR_res <- mr(harmonized_list[[i]])
+  MR_res_list[[i]] <- MR_res 
+}
+```
+
+## results into df
+```{r}
+combined_res_df <- do.call(rbind, MR_res_list)
+```
+
+## FDR correction per method
+```{r}
+combined_res_df <- combined_res_df %>%
+  group_by(method) %>%
+  mutate(p_value_adj = p.adjust(pval, method = "fdr")) %>%
+  ungroup()
+```
+
+#save
+```{r}
+export(combined_res_df,here::here("../MRresults/species/res_species.xlsx"))
+```
+
+
+## methods, using MendelianRandomisation package
+```{r}
+MR_res_list <- list()
+
+for (i in seq_along(harmonized_list)) {
+  
+  harmonized_dat <- harmonized_list[[i]]
+  
+  #MR methods for the current harmonized dataset
+  mr_bmi_sp <- mr_input(bx = harmonized_dat$beta.exposure, 
+                        bxse = harmonized_dat$se.exposure,
+                        by = harmonized_dat$beta.outcome, 
+                        byse = harmonized_dat$se.outcome,
+                        exposure = "BMI", outcome = "species",
+                        snps = harmonized_dat$SNP,
+                        effect_allele = harmonized_dat$effect_allele.outcome,
+                        other_allele = harmonized_dat$other_allele.outcome)
+  
+  # IVW method
+  ivw <- mr_ivw(mr_bmi_sp)
+  ivw.df <- data.frame(model = "IVW", beta = ivw@Estimate, se = ivw@StdError, lci = ivw@CILower, hci = ivw@CIUpper, p = ivw@Pvalue, 
+                       nsnps = ivw@SNPs, hetero_est = ivw@Heter.Stat[1], hetero_p = ivw@Heter.Stat[2])
+  
+  # Median-weighted method
+  median <- mr_median(mr_bmi_sp, weighting = "weighted", iterations = 10000)
+  median.df <- data.frame(model = "Median-weighted", beta = median@Estimate, se = median@StdError, lci = median@CILower, hci = median@CIUpper, 
+                          p = median@Pvalue, nsnps = median@SNPs, hetero_est = NA, hetero_p = NA)
+  
+  # Egger method
+  egger <- mr_egger(mr_bmi_sp)
+  egger.df <- data.frame(model = "Egger", beta = egger@Estimate, se = egger@StdError.Est, lci = egger@CILower.Est, hci = egger@CIUpper.Est, 
+                         p = egger@Pvalue.Est, nsnps = egger@SNPs, hetero_est = egger@Heter.Stat[1], hetero_p = egger@Heter.Stat[2])
+  
+  # Egger-intercept
+  egger.int <- data.frame(model = "Egger-intercept", beta = egger@Intercept, se = NA, lci = NA, hci = NA, 
+                          p = egger@Pvalue.Int, nsnps = NA, hetero_est = NA, hetero_p = NA)
+  
+  #combine results into a single data frame
+  temp <- data.frame(rbind(ivw.df, median.df, egger.df, egger.int))
+  temp[,c("beta","se","lci","hci")] <- round(temp[,c("beta","se","lci","hci")],5) 
+  temp$hetero_est = round(temp$hetero_est, 5)
+  temp$hetero_p = round(temp$hetero_p, 5)
+  MR_res_list[[i]] <- temp
+}
+
+#result for one of the outcomes (e.g., the first one)
+datatable(MR_res_list[[1]], rownames = F, filter = "top", caption = "BMI and species")
+
+```
+
+```{r}
+combined_res_df <- do.call(rbind, MR_res_list)
+```
+
+```{r}
+sp_data <- do.call(rbind, harmonized_list)
+
+sp_list <- unique(sp_data$outcome)
+
+combined_res_df$outcome <- rep(sp_list, each = 4)
+
+```
+
+## FDR correction per method
+```{r}
+combined_res_df <- combined_res_df %>%
+  group_by(model) %>%
+  mutate(p_value_adj = p.adjust(p, method = "fdr")) %>%
+  ungroup()
+
+
+# mr_res <- mr_res %>%
+#   group_by(model) %>%
+#   mutate(p_value_adj_benf = p.adjust(p, method = "bonferroni")) %>%
+#   ungroup()
+```
+
+```{r}
+combined_res_df <- merge(taxonomy, combined_res_df, by.x = "MGS", by.y = "outcome")
+combined_res_df <- combined_res_df[,c(2:ncol(combined_res_df))]
+```
+
+```{r}
+export(combined_res_df,here::here("../MRresults/species/res_species2.xlsx")) #from MendelianRandomisation package
+```
+
+## EXTRAs
+```{r}
+ordered_combined_res_df <- combined_res_df[order(combined_res_df$p_value_adj), ]
+ivw <- ordered_combined_res_df[ordered_combined_res_df$model == "IVW",]
+mr_egg <- ordered_combined_res_df[ordered_combined_res_df$model == "Egger",]
+
+df_egg_ordered <- mr_egg[match(ivw$species, mr_egg$species), ]
+export(df_egg_ordered,"/Volumes/research/metabogut/BMI_2021/analysisv3.0/MR/MRresults/mr_egg_sorted_by_ivw.xlsx") 
+
+
+intercept <- ordered_combined_res_df[ordered_combined_res_df$model == "Egger-intercept",]
+df_egg_intercept_ordered <- intercept[match(ivw$species, intercept$species), ]
+export(df_egg_intercept_ordered,"/Volumes/research/metabogut/BMI_2021/analysisv3.0/MR/MRresults/mr_egg_intrcept_sorted_by_ivw.xlsx") 
+
+
+w_median <- ordered_combined_res_df[ordered_combined_res_df$model == "Median-weighted",]
+w_median_ordered <- w_median[match(ivw$species, w_median$species), ]
+export(w_median_ordered,"/Volumes/research/metabogut/BMI_2021/analysisv3.0/MR/MRresults/w_median_ordered_sorted_by_ivw.xlsx") 
+
+```
+
+##################################################
+################################################## GMMs
+
+## remove hashtag from beginning of files, RUN FOR LOOP HERE ONLY ONCE
+```{r}
+desc <- read_excel("/Volumes/research/metabogut/BMI_2021/analysisv3.0/regression/gmm/GMMs_description.xlsx")
+desc <- desc %>% mutate(GMM = paste0(Name, ".",Module))
+desc <- subset(desc, select = c(Module, GMM))
+
+exposure_stat <- read_excel(here::here("../../PRS_dataprep/bmi_snps_checked_545.xlsx"))
+
+dir_path <- "/Volumes/research/metabogut/BMI_2021/analysisv3.0/MR/output_assoc/gmm"
+file_list <- list.files(dir_path, pattern = "\\.linear$", full.names = TRUE) #files list
+
+for (file in file_list) {
+  lines <- readLines(file)
+  
+  #remove leading '#' from each line (if present)
+  lines_cleaned <- gsub("^#\\s*", "", lines)
+  writeLines(lines_cleaned, file)
+}
+```
+
+
+```{r}
+#keep TEST = ADD
+#read file list again
+file_list <- list.files(dir_path, pattern = "\\.linear$", full.names = TRUE)
+
+
+#extract outcome information
+outcome_list <- lapply(file_list, function(file_path) {
+  file <- read.table(file_path, header = TRUE, sep = "\t")  
+  
+  #TEST == "ADD"
+  outcome_stat <- file[file$TEST == "ADD",]
+  outcome_stat <- outcome_stat[order(outcome_stat$ID),]
+  
+  #extract outcome and id.outcome from the file name
+  file_name <- basename(file_path)  #extract file name from full path
+  parts <- strsplit(file_name, "[_.]")[[1]] 
+  id_outcome <- parts[[3]]
+  #id_outcome <- paste0(parts[[3]], ".", parts[[4]])
+  
+  #create outcome_dat
+  outcome_dat <- outcome_stat %>%
+    transmute(SNP = ID,
+              beta.outcome = BETA,
+              se.outcome = SE,
+              effect_allele.outcome = A1,
+              other_allele.outcome = OMITTED,
+              eaf.outcome = A1_FREQ,
+              outcome = id_outcome,  
+              id.outcome = id_outcome)  
+  
+  return(outcome_dat)  
+})
+
+# Now outcome_list contains a list of data frames with the transformed data for each file
+
+exposure_dat <- exposure_stat %>% transmute(SNP = SNP,
+                                             beta.exposure = beta.combined,
+                                             se.exposure = se.combined,
+                                             effect_allele.exposure = EA,
+                                             other_allele.exposure = NEA,
+                                             eaf.exposure = frqA1.combined,
+                                             exposure = "BMI",
+                                             id.exposure = "BMI_cont")
+exposure_stat <- exposure_stat[order(exposure_stat$SNP),]
+
+```
+
+## harmonize
+```{r}
+harmonized_list <- list()
+
+for (i in seq_along(outcome_list)) {
+  harmonised_dat <- harmonise_data(exposure_dat, outcome_list[[i]], action = 2)
+  harmonized_list[[i]] <- harmonised_dat 
+}
+
+```
+
+# MR
+## gmm, using TwoSampleMR
+```{r}
+MR_res_list <- list()
+
+for (i in seq_along(harmonized_list)){
+  MR_res <- mr(harmonized_list[[i]])
+  MR_res_list[[i]] <- MR_res 
+}
+```
+
+## results into df
+```{r}
+combined_res_df <- do.call(rbind, MR_res_list)
+```
+
+## FDR correction per method
+```{r}
+combined_res_df <- combined_res_df %>%
+  group_by(method) %>%
+  mutate(p_value_adj = p.adjust(pval, method = "fdr")) %>%
+  ungroup()
+```
+
+#save
+```{r}
+export(combined_res_df,here::here("../MRresults/gmm/res_GMM.xlsx"))
+```
+
+
+## methods, using MendelianRandomisation package
+```{r}
+MR_res_list <- list()
+
+for (i in seq_along(harmonized_list)) {
+  
+  harmonized_dat <- harmonized_list[[i]]
+  
+  #MR methods for the current harmonized dataset
+  mr_bmi_sp <- mr_input(bx = harmonized_dat$beta.exposure, 
+                        bxse = harmonized_dat$se.exposure,
+                        by = harmonized_dat$beta.outcome, 
+                        byse = harmonized_dat$se.outcome,
+                        exposure = "BMI", outcome = "gmm",
+                        snps = harmonized_dat$SNP,
+                        effect_allele = harmonized_dat$effect_allele.outcome,
+                        other_allele = harmonized_dat$other_allele.outcome)
+  
+  # IVW method
+  ivw <- mr_ivw(mr_bmi_sp)
+  ivw.df <- data.frame(model = "IVW", beta = ivw@Estimate, se = ivw@StdError, lci = ivw@CILower, hci = ivw@CIUpper, p = ivw@Pvalue, 
+                       nsnps = ivw@SNPs, hetero_est = ivw@Heter.Stat[1], hetero_p = ivw@Heter.Stat[2])
+  
+  # Median-weighted method
+  median <- mr_median(mr_bmi_sp, weighting = "weighted", iterations = 10000)
+  median.df <- data.frame(model = "Median-weighted", beta = median@Estimate, se = median@StdError, lci = median@CILower, hci = median@CIUpper, 
+                          p = median@Pvalue, nsnps = median@SNPs, hetero_est = NA, hetero_p = NA)
+  
+  # Egger method
+  egger <- mr_egger(mr_bmi_sp)
+  egger.df <- data.frame(model = "Egger", beta = egger@Estimate, se = egger@StdError.Est, lci = egger@CILower.Est, hci = egger@CIUpper.Est, 
+                         p = egger@Pvalue.Est, nsnps = egger@SNPs, hetero_est = egger@Heter.Stat[1], hetero_p = egger@Heter.Stat[2])
+  
+  # Egger-intercept
+  egger.int <- data.frame(model = "Egger-intercept", beta = egger@Intercept, se = NA, lci = NA, hci = NA, 
+                          p = egger@Pvalue.Int, nsnps = NA, hetero_est = NA, hetero_p = NA)
+  
+  #combine results into a single data frame
+  temp <- data.frame(rbind(ivw.df, median.df, egger.df, egger.int))
+  temp[,c("beta","se","lci","hci")] <-temp[,c("beta","se","lci","hci")]
+  temp$hetero_est = temp$hetero_est
+  temp$hetero_p = temp$hetero_p
+  MR_res_list[[i]] <- temp
+}
+
+#result for one of the outcomes (e.g., the first one)
+datatable(MR_res_list[[1]], rownames = F, filter = "top", caption = "BMI and gmm")
+
+```
+
+```{r}
+combined_res_df <- do.call(rbind, MR_res_list)
+```
+
+```{r}
+sp_data <- do.call(rbind, harmonized_list)
+
+sp_list <- unique(sp_data$outcome)
+
+combined_res_df$outcome <- rep(sp_list, each = 4)
+
+```
+
+## FDR correction per method
+```{r}
+combined_res_df <- combined_res_df %>%
+  group_by(model) %>%
+  mutate(p_value_adj = p.adjust(p, method = "fdr")) %>%
+  ungroup()
+
+
+# mr_res <- mr_res %>%
+#   group_by(model) %>%
+#   mutate(p_value_adj_benf = p.adjust(p, method = "bonferroni")) %>%
+#   ungroup()
+```
+
+```{r}
+combined_res_df <- merge(desc, combined_res_df, by.x = "Module", by.y = "outcome")
+combined_res_df <- combined_res_df[,c(2:ncol(combined_res_df))]
+```
+
+```{r}
+export(combined_res_df,here::here("../MRresults/gmm/res_GMM2.xlsx")) #from MendelianRandomisation package
+```
