@@ -1,34 +1,26 @@
 # Project title 
-## The gut microbiome and obesity in a population of 12 000 individuals.
+## A comprehensive analysis of the relationship between BMI and the gut metagenome in large population provides evidence for causal effects of BMI on the gut microbiota diversity, composition and function
+
 
 # Project overview
-In this project, I studied the connection between gut bacteria and obesity which was subdivided 
-into 3 main phenotypes: BMI, waist circumference adjusted for BMI (WaistadjBMI), and waist-hip ratio
-adjusted for BMI (WHRadjBMI) in 3 large population cohorts (N = 12028): The Swedish CArdioPulmonary bioImage 
+In this project, we studied the connection between gut bacteria and BMI in 3 large population cohorts (N = 9,993): The Swedish CArdioPulmonary bioImage 
 Study (SCAPIS Malmö and SCAPIS Uppsala) and Malmö Offspring Study (MOS).
 
 # Illustrated table of content
 ## 1. Project description
 #### Background:
-Multiple studies have demonstrated a connection between obesity and the human gut microbiome, but the 
-inconsistency in the findings across different studies  prevented us from drawing any firm conclusions. Our 
-aim was to investigate the relationship between gut microbiome and obesity by performing a large 
-population-based study with uniform methodologies to decrease the risk of coincidental findings and 
-contradictory results.
+The gut microbiome has emerged as a key determinant of cardiometabolic health, with growing evidence linking gut microbial composition and function to body weight regulation, insulin resistance, liver fat accumulation, and cardiovascular risk. Disruptions to this microbial ecosystem, whether through diet, medication, or other environmental exposures, have been associated with metabolic dysfunction and increased cardiometabolic risk.
+While cross-sectional microbiome-wide association studies (MWAS) have highlighted robust associations between microbiota features and metabolic phenotypes such as BMI, the direction of these relationships remains largely unresolved. Moreover, discrepancies in study design, sequencing methodology, cohort characteristics, and statistical approaches have further contributed to inconsistencies across studies. A more robust understanding of causality is necessary to translate microbiome research into clinical practice, and requires integrative approaches combining metagenomics, longitudinal designs, and genetic methods such as Mendelian Randomization (MR). 
 
-#### Material and methods: 
-In three Swedish population-based cohorts with in total 12 028 participants we performed identical deep 
-shotgun gut metagenomic sequencing and bioinformatic processing, based on clustering of co-abundant genes 
-into metagenomic species (MGS), that enabled identification of both known and unknown species and 
-sub-species. We used a series of generalized linear models that are adjusted for multiple confounders, LASSO 
-regression, and functional analysis for bacterial proteins and pathways that are associated with and 
-enriched in the phenotypes.
+
+#### Project overflow: 
+[figS01.pdf](https://github.com/user-attachments/files/20591699/figS01.pdf)
 
 
 ## 2. Installations
 I used R v4.2.2. <br>
 Main packages and libraries: <br>
-- OmixerRPM v0.3.2
+- vegan
 - glmnet
 - caret
 - BiocParallel
@@ -37,14 +29,14 @@ Main packages and libraries: <br>
 - ggplot2
 - pheatmap
 - ComplexHeatmap
-
-## 3. Contributing
-#### If someone wishes to contribute, add later
-
-## 4. License
+- MendelianRandomization
 
 
-## 5. Contact
+Others: <br>
+- Cytoscape software (v3.9.1)
+
+
+## 3. Contact
 For any questions or inquiries, please contact Mariam Miari at mariam.miari@med.lu.se.
 
 ######################################## 
