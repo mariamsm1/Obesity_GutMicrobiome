@@ -1,7 +1,7 @@
 ---
 title: "Microbiome BMI analyses - regression models"
 subtitle: "Main analysis and three sensitivity analyses"
-author: "Marlena Maziarz & Mariam Miari"
+author: "Marlena Maziarz", "edited by Mariam Miari"
 date: "`r format(Sys.Date(), '%B %e, %Y')`"
 output:
   bookdown::html_document2:
@@ -25,7 +25,7 @@ editor_options:
 # The main analysis
 
 ## Setup
-Load the data, source the helper functions etc. The dataset was prepared by Mariam, filtered at 5% and clr-transformed, n = 9993 where I used unrelated individuals (UNRELATED_1_DEGREE) 
+Load the data, source the helper functions etc. The dataset was prepared by Mariam, filtered at 5% and clr-transformed, n = 9993. 
 
 ```{r}
 rm(list = ls())
@@ -38,16 +38,15 @@ library(readxl)
 results_version <- '240906'
 ##################################################################################################################################
 # Source the helper functions
-source(here::here('bmi_paper_model_fitting_helper_functions_240906.R')) # NOTE THE VERSION, make sure it's the right one!
+source(here::here('bmi_paper_model_fitting_helper_functions_240906.R')) 
 ##################################################################################################################################
 
 
 
 # reads 'data' 
-load("/Volumes/research/metabogut/BMI_2021/data/processed/MGS2.0/data_nds_filt_CLRtrans_9993_updated250208.RData")
+load("../data/processed/MGS2.0/data_nds_filt_CLRtrans_9993_updated250208.RData")
 data <- data_nds_trans_filt
 
-# Since the regression model does not accept spaces in the variables names being regressed I will take the mgs ID only and run the regression model with it
 
 matching_columns <- grepl("hMGS", colnames(data))
 

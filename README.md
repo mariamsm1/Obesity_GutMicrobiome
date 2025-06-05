@@ -13,7 +13,7 @@ The gut microbiome has emerged as a key determinant of cardiometabolic health, w
 While cross-sectional microbiome-wide association studies (MWAS) have highlighted robust associations between microbiota features and metabolic phenotypes such as BMI, the direction of these relationships remains largely unresolved. Moreover, discrepancies in study design, sequencing methodology, cohort characteristics, and statistical approaches have further contributed to inconsistencies across studies. A more robust understanding of causality is necessary to translate microbiome research into clinical practice, and requires integrative approaches combining metagenomics, longitudinal designs, and genetic methods such as Mendelian Randomization (MR). In this project, we leverage deep metagenomic sequencing and multiple statistical approaches to identify robust associations and assess potential causal effects of BMI on microbial diversity, species, and functional pathways. 
 
 
-#### Project overflow: 
+#### Project workflow: 
 [figS01.pdf](https://github.com/user-attachments/files/20591699/figS01.pdf)
 
 
@@ -34,7 +34,7 @@ Main packages and libraries: <br>
 
 Others: <br>
 - Cytoscape software (v3.9.1)
-
+- PLINK(v2.0)
 
 ## 3. Contact
 For any questions or inquiries, please contact Mariam Miari at mariam.miari@med.lu.se.

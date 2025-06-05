@@ -3,7 +3,7 @@
 
 ## Description of the scripts:
 1. species_bmi.Rmd : association between CLR-transformed species relative abundance as exposure and BMI as outcome. This is run for the analysis of all individuals, sex-stratified, and sex-interaction.
-2. src_species_BMI.R : source code for (1) above.
+2. src_species_bmi.R : source code for (1) above.
 3. bmi_species.Rmd : association between BMI as exposure and CLR-transformed species relative abundance as outcome. This is run for the analysis of all individuals, sex-stratified, and for sex-interaction.
 4. bmi_species_PA.Rmd : association between BMI as exposure and species presence/absence as outcome. This is run for the analysis of all individuals, sex-stratified, and for sex-interaction. 
 5. bmi_species_pres.Rmd : association between BMI as exposure and species presence (discarding all zero abundances) as outcome. This is run for the analysis of all individuals, sex-stratified, and for sex-interaction.
