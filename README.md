@@ -18,7 +18,7 @@ While cross-sectional microbiome-wide association studies (MWAS) have highlighte
 
 
 ## 2. Installations
-I used R v4.2.2. <br>
+R v4.2.2. <br>
 Main packages and libraries: <br>
 - vegan
 - glmnet
