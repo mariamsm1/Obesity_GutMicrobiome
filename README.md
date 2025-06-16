@@ -14,7 +14,7 @@ While cross-sectional microbiome-wide association studies (MWAS) have highlighte
 
 
 #### Project workflow: 
-[figS01.pdf](https://github.com/user-attachments/files/20591699/figS01.pdf)
+[figS01.pdf](https://github.com/user-attachments/files/20765079/figS01.pdf)
 
 
 ## 2. Installations
