@@ -14,7 +14,8 @@ In conclusion, our study shows that BMI may causally shape gut microbiota compos
 
 
 #### Project workflow: 
-<<<<<<< HEAD
+[fig01.pdf](https://github.com/user-attachments/files/22407605/fig01.pdf)
+
 
 
 
