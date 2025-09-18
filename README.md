@@ -14,11 +14,12 @@ In conclusion, our study shows that BMI may causally shape gut microbiota compos
 
 
 #### Project workflow: 
+<<<<<<< HEAD
 
 
 
 ## 2. Installations
-R v4.2.2. <br>
+R v4.4.2. <br>
 Main packages and libraries: <br>
 - vegan
 - glmnet
