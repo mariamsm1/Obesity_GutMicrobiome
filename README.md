@@ -1,20 +1,20 @@
-# Project title 
-## A comprehensive analysis of the relationship between BMI and the gut metagenome in large population provides evidence for causal effects of BMI on the gut microbiota diversity, composition and function
+# Study title 
+## BMI shapes gut microbiota diversity, composition, and function in a comprehensive analysis of a large population study
 
-
-# Project overview
-In this project, we studied the connection between BMI and gut metagenome in 3 large population cohorts (n = 9,993): The Swedish CArdioPulmonary bioImage 
+# Study overview
+In this project, we studied the connection between BMI and gut metagenome in 3 large Swedish population cohorts (n = 9,993): The Swedish CArdioPulmonary bioImage 
 Study (SCAPIS Malmö and SCAPIS Uppsala) and Malmö Offspring Study (MOS).
 
 # Illustrated table of content
-## 1. Project description
-#### Background:
-The gut microbiome has emerged as a key determinant of cardiometabolic health, with growing evidence linking gut microbial composition and function to body weight regulation, insulin resistance, liver fat accumulation, and cardiovascular risk. Disruptions to this microbial ecosystem, whether through diet, medication, or other environmental exposures, have been associated with metabolic dysfunction and increased cardiometabolic risk.
-While cross-sectional microbiome-wide association studies (MWAS) have highlighted robust associations between microbiota features and metabolic phenotypes such as BMI, the direction of these relationships remains largely unresolved. Moreover, discrepancies in study design, sequencing methodology, cohort characteristics, and statistical approaches have further contributed to inconsistencies across studies. A more robust understanding of causality is necessary to translate microbiome research into clinical practice, and requires integrative approaches combining metagenomics, longitudinal designs, and genetic methods such as Mendelian Randomization (MR). In this project, we leverage deep metagenomic sequencing and multiple statistical approaches to identify robust associations and assess potential causal effects of BMI on microbial diversity, species, and functional pathways. 
+## 1. Study description
+#### Abstract:
+Growing evidence suggests a strong relationship between the gut microbiome and BMI, but sex-specific differences and causal connections between these multifactorial and modifiable factors have remained underexplored. 
+In 9,993 individuals with deep gut metagenomic analysis of three Swedish cohorts we performed a comprehensive analysis using diverse statistical models, that captured unique associations between 1,228 microbial species and BMI, of which 276 species showed directionally consistent BMI-associations across all models.  Our study shows gut microbiome by sex interactions with stronger effect sizes of alpha-diversity, 194 species, and 36 microbial functions on BMI among females compared to males. Using two-sample Mendelian Randomization we found that higher BMI decreases alpha-diversity, affects the relative abundance of 94 species, including increase in 39 oral species, and affects pathways including decreased butyrate production and mucin degradation, and increased propionate production. 
+In conclusion, our study shows that BMI may causally shape gut microbiota composition and function, potentially creating a vicious cycle that reinforces weight gain among individuals predisposed to obesity. It also highlights the need for future research to explore sex-specific differences and the oral-gut-brain axis in obesity-related microbiome changes, and the potential of weight loss to counteract the negative effects of adiposity on the gut microbiome.
 
 
 #### Project workflow: 
-[figS01.pdf](https://github.com/user-attachments/files/20591699/figS01.pdf)
+
 
 
 ## 2. Installations
